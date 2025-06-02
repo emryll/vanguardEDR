@@ -12,33 +12,6 @@ import (
 	"github.com/fatih/color"
 )
 
-type HEARTBEAT struct {
-	Pid       uint32
-	Heartbeat [260]byte
-}
-
-type COMMAND struct {
-	Pid     uint32
-	Command [64]byte
-}
-
-const TM_MAX_DATA_SIZE = 520
-
-type TELEMETRY_HEADER struct {
-	Pid       uint32
-	Type      uint32
-	TimeStamp int64
-}
-
-type TELEMETRY struct {
-	Header  TELEMETRY_HEADER
-	RawData [TM_MAX_DATA_SIZE]byte
-}
-
-type TextCheckData struct {
-	Result int32 // BOOL
-}
-
 var (
 	HEARTBEAT_PIPE string = "\\\\.\\pipe\\vgrd_hb"
 	TELEMETRY_PIPE string = "\\\\.\\pipe\\vgrd_tm"
@@ -73,7 +46,7 @@ func heartbeatHandler(conn net.Conn, wg *sync.WaitGroup) {
 	defer conn.Close()
 	color.Green("[heartbeat] Client connected!")
 	for {
-		var hb HEARTBEAT
+		var hb Heartbeat
 		err := binary.Read(conn, binary.LittleEndian, &hb)
 		if err != nil {
 			color.Red("\n[!] Read error: %v", err)
@@ -117,7 +90,7 @@ func telemetryHandler(conn net.Conn, wg *sync.WaitGroup) {
 	defer conn.Close()
 	color.Green("[telemetry] Client connected!")
 	for {
-		var tm TELEMETRY
+		var tm Telemetry
 		err := binary.Read(conn, binary.LittleEndian, &tm)
 		if err != nil {
 			color.Red("\n[!] Failed to read telemetry pipe: %v", err)
@@ -156,6 +129,7 @@ func telemetryHandler(conn net.Conn, wg *sync.WaitGroup) {
 	}
 }
 
+// TODO:
 func commandHandler(conn net.Conn, wg *sync.WaitGroup) {
 	defer wg.Done()
 	time.Sleep(time.Second * time.Duration(60))
@@ -163,7 +137,7 @@ func commandHandler(conn net.Conn, wg *sync.WaitGroup) {
 	var cmdBuf [64]byte
 	copy(cmdBuf[:], cmd)
 
-	command := COMMAND{
+	command := Command{
 		Pid:     0,
 		Command: cmdBuf,
 	}
@@ -174,31 +148,4 @@ func commandHandler(conn net.Conn, wg *sync.WaitGroup) {
 		return
 	}
 	color.Green("[cmd] Sent command!")
-}
-
-func main() {
-	var wg sync.WaitGroup
-	// launch pipe listeners, creating the pipes
-	go heartbeatListener(&wg)
-	go telemetryListener(&wg)
-	wg.Add(2)
-
-	// create command pipe, wait for connections and launch handler
-	l, err := winio.ListenPipe(COMMANDS_PIPE, nil)
-	if err != nil {
-		color.Red("\n[!] Failed to start command pipe: %v", err)
-	} else {
-		defer l.Close()
-		for {
-			conn, err := l.Accept()
-			if err != nil {
-				color.Red("\n[!] Failed to accept command pipe connection: %v", err)
-				continue
-			}
-			defer conn.Close()
-			go commandHandler(conn, &wg)
-			wg.Add(1)
-		}
-	}
-	wg.Wait()
 }

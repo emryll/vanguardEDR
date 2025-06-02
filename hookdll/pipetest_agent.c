@@ -54,5 +54,18 @@ int main() {
         return 1;
     }
 
+    //TODO: create threads for each IPC
+        // heartbeat thread will just read it and print it out
+        //  
 
+    while(TRUE) {
+
+    }
+
+    CloseHandle(hHeartbeat);
+    CloseHandle(hTelemetry);
+    CloseHandle(hCommands);
+    CloseHandle(hHbEvent);
+    CloseHandle(hTmEvent);
+    CloseHandle(hCmdEvent);
 }

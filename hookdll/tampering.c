@@ -50,24 +50,30 @@ void HashTextSection(HMODULE moduleBase, unsigned char* output, unsigned int* ha
 
             //printf("[+] Found .text section!\n\t\\==={ Address: 0x%X\n\t \\=={ Size: %d\n\t  \\={ RVA: 0x%X\n", textAddress, textSize, sectionHeader[i].VirtualAddress);
             EVP_MD_CTX *ctx = EVP_MD_CTX_new();
+            if (!ctx) {
+                return;
+            }
 //            unsigned char hash[EVP_MAX_MD_SIZE];
             *hashLen = 0;
 
             // Initialize the context for SHA256
             if (EVP_DigestInit_ex(ctx, EVP_sha256(), NULL) != 1) {
                 printf("[.text] Error initializing digest\n");
+                EVP_MD_CTX_free(ctx);
                 return;
             }
 
             // Update the hash with the .text section data
             if (EVP_DigestUpdate(ctx, (LPCVOID)textAddress, textSize) != 1) {
                 printf("[.text] Error updating digest\n");
+                EVP_MD_CTX_free(ctx);
                 return;
             }
 
             // Finalize the hash and get the result
             if (EVP_DigestFinal_ex(ctx, output, hashLen) != 1) {
                 printf("Error finalizing digest\n");
+                EVP_MD_CTX_free(ctx);
                 return;
             }
 
@@ -96,3 +102,41 @@ void getFuncHash(PVOID funcAddress, int length, unsigned char output[SHA256_DIGE
 }
 
 */
+BOOL CheckTextSectionIntegrity(unsigned char* originalHash, HMODULE moduleBase) {
+    unsigned int hashLen;
+    unsigned char* currentHash;
+    HashTextSection(moduleBase, currentHash, &hashLen);
+    return memcmp(originalHash, currentHash, hashLen) == 0; 
+}
+
+void PerformIntegrityChecks(HMODULE ownBase, HMODULE ntBase, HMODULE k32Base) {
+    BOOL ownMatch = CheckTextSectionIntegrity(OwnTextHash, ownBase);
+    BOOL ntMatch = CheckTextSectionIntegrity(originalNtTextHash, ntBase);
+    BOOL k32Match = CheckTextSectionIntegrity(originalKernel32TextHash, k32Base);
+    
+    //* send scan results to agent
+    TELEMETRY ownCheck;
+    TELEMETRY ntCheck;
+    TELEMETRY k32Check;
+    
+    GetTextTelemetryPacket(&ownCheck, DLL_NAME, ownMatch);
+    GetTextTelemetryPacket(&ntCheck, "ntdll.dll", ntMatch);
+    GetTextTelemetryPacket(&k32Check, "kernel32.dll", k32Match);
+
+    DWORD dwBytesWritten;
+    WriteFile(hTelemetry, &ownCheck, sizeof(ownCheck), &dwBytesWritten, NULL);
+    WriteFile(hTelemetry, &ntCheck, sizeof(ntCheck), &dwBytesWritten, NULL);
+    WriteFile(hTelemetry, &k32Check, sizeof(k32Check), &dwBytesWritten, NULL);
+    //* performer further checks to find out if a specific hook was tampered with
+    //TODO: hash check all functions in specified module?
+    if (!ntdllMatch || !kernel32Match) {
+        int mismatchCount = 0;
+        mismatches = CheckHookIntegrity(&mismatchCount); //? Seperate thread?
+        
+        //* send hook integrity results to agent
+        TELEMETRY hookIntegrity;
+        GetHookIntegrityTelemetryPacket(&hookIntegrity, mismatches, mismatchCount);
+        WriteFile(hTelemetry, &hookIntegrity, sizeof(hookIntegrity), &dwBytesWritten, NULL);
+        free(mismatches);
+    }
+}
