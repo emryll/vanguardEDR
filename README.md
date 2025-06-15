@@ -13,6 +13,7 @@ For the beta version detection comes from the following scans:
 - Behavior patterns from API calls, filesystem operations and registry modification
 - Basic thread scanning
 - Network behavior
+
 I'm planning to add some additional scans in the future but these form the core for detections.
 These scans depend on a few types of rules: YARA rules for static and memory scans, API behavior patterns, filesystem behavior patterns and registry behavior patterns. You can use the default rules or add your own by adding files to rules/.
 
