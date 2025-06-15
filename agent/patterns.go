@@ -11,21 +11,22 @@ var apiPatterns = []ApiPattern{
 	},
 	{Name: "Classic DLL injection (kernel32)",
 	},
-	{Name: "Classic DLL injection (ntdll)"
+	{Name: "Classic DLL injection (ntdll)",
 	},
 }
 
 //TODO: read from external json file
 var filePatterns = []FilePattern{
-	{ Name: }
+	{ Name: "",},
 }
 
-func MemoryScan(pid int) {
-	//TODO:
+//TODO: read from external json file
+var regPatterns = []RegPattern {
+	{Name: "",},
 }
 
 // returns names of each pattern match
-func (p Process) CheckApiPatterns() []Result {
+func (p *Process) CheckApiPatterns() []Result {
 	var matches []Result
 	for _, pattern := range apiPatterns {
 		var (
@@ -43,7 +44,6 @@ func (p Process) CheckApiPatterns() []Result {
 					match = false
 					continue
 				}
-				//? if map entry exists, set match to true and continue
 				//* check if its within timeframe
 				if i == 0 { //save timeframes for first part of pattern
 					startTimes = append(startTimes, p.APICalls[fn].TimeStamp)
@@ -65,7 +65,7 @@ func (p Process) CheckApiPatterns() []Result {
 								break
 							}
 						}
-						if !found {
+						if !found { // no call matches timerange
 							startTimes = RemoveSliceMember(startTimes, i)
 						}
 					}
@@ -101,8 +101,8 @@ func (p Process) CheckApiPatterns() []Result {
 	return matches
 }
 
-func (p Process) CheckFileBehaviorPatterns() []Result {
-	var results []Result
+func (p *Process) CheckFileBehaviorPatterns() Result {
+	var results Result
 	for _, pattern := range filePatterns {
 		event, exists := p.FileEvents[pattern.Name]
 		if !exists { // current pattern does not match
@@ -117,10 +117,45 @@ func (p Process) CheckFileBehaviorPatterns() []Result {
 		if !exists {
 			p.PatternMatches[pattern.Name] = match
 		} else {
+			// avoid registering same behavior events multiple times
+			if match.TimeStamp - entry.TimeStamp <= TM_HISTORY_CLEANUP_INTERVAL {
+				continue
+			}
 			entry.TimeStamp = match.TimeStamp
 			entry.Count++;
 		}
+		results.TotalScore += match.Severity
+		results.Results = append(results.Results, match)
 	}
+	return results
+}
+
+func (p *Process) CheckRegBehaviorPatterns() Result {
+	var results Result
+	for _, pattern := range regPatterns {
+		event, exists := p.RegEvents[pattern.Name]
+		if !exists { // current pattern does not match
+			continue
+		}
+		var match PatternResult
+		match.Name = pattern.NameapiPatterns
+		match.Severity = pattern.Severity
+		match.TimeStamp = time.Now().Unix()
+		match.Count = 0
+		entry, exists := p.PatternMatches[pattern.Name]
+		if !exists {
+			p.PatternMatches[pattern.Name] = match
+		} else {
+			if match.TimeStamp - entry.TimeStamp <= TM_HISTORY_CLEANUP_INTERVAL {
+				continue
+			}
+			entry.TimeStamp = match.TimeStamp
+			entry.Count++
+		}
+		results.TotalScore += match.Severity
+		results.Results = append(results.Results, match)
+	}
+	return results
 }
 
 func HistoryCleaner(wg *sync.WaitGroup, terminate chan struct{}) {

@@ -60,6 +60,40 @@ func heartbeatHandler(conn net.Conn, wg *sync.WaitGroup) {
 		}
 
 		color.Green("[heartbeat] Received %s from %d", heartbeat, hb.Pid)
+		if p, exists := processes[int(hb.Pid)]; exists {
+			p.LastHeartbeat = time.Now().Unix()
+		} else {
+			color.Green("[+] New process detected (%d)", hb.Pid)
+			path, err := GetProcessExecutable(hb.Pid)
+			if err != nil {
+				TerminateProcess(int(hb.Pid))
+				continue
+			}
+			r, err := IsSignatureValid(path)
+			if err != nil {
+				TerminateProcess(int(hb.Pid))
+				continue
+			}
+			var isSigned bool
+			switch r {
+			case IS_UNSIGNED:
+				isSigned = false
+				fmt.Printf("[i] Process %d with path %s is not signed\n", hb.Pid, path)
+			case HAS_SIGNATURE:
+				isSigned = true
+				color.Green("[+] Process %d with path %s is signed", hb.Pid, path)
+			case HASH_MISMATCH:
+				color.Red("[!] Signature hash mismatch in %s!", path)
+				TerminateProcess(int(hb.Pid))
+				continue
+			}
+			processes[int(hb.Pid)] = Process{Path: path,
+				LastHeartbeat: time.Now().Unix(),
+				IsSigned:      isSigned,
+				APICalls:      make(map[string]ApiCallData),
+				FileEvents:    make(map[string]FileEventData),
+				RegEvents:     make(map[string]RegEventData)}
+		}
 	}
 }
 
@@ -85,6 +119,7 @@ func telemetryListener(wg *sync.WaitGroup) error {
 	}
 }
 
+// TODO: add telemetry to specified process' history
 // handle individual connection
 func telemetryHandler(conn net.Conn, wg *sync.WaitGroup) {
 	defer conn.Close()
@@ -111,7 +146,17 @@ func telemetryHandler(conn net.Conn, wg *sync.WaitGroup) {
 			continue
 		}
 		switch tm.Header.Type {
-		case 3: //.text integrity check
+		case TM_TYPE_API_CALL:
+			var apiCall ApiCallData
+			buf := bytes.NewReader(tm.RawData[:])
+			err := binary.Read(buf, binary.LittleEndian, &apiCall)
+			if err != nil {
+				color.Red("\n[!] Failed to decode ApiCallData: %v", err)
+				continue
+			}
+			processes[int(tm.Header.Pid)].APICalls[string(apiCall.FuncName)] = 
+			
+		case TM_TYPE_TEXT_INTEGRITY:
 			var textCheck TextCheckData
 			buf := bytes.NewReader(tm.RawData[:])
 			err := binary.Read(buf, binary.LittleEndian, &textCheck)
@@ -123,7 +168,8 @@ func telemetryHandler(conn net.Conn, wg *sync.WaitGroup) {
 				color.Green("[telemetry] .text integrity check of process %d: TRUE", tm.Header.Pid)
 			}
 			if textCheck.Result == 0 {
-				color.Green("[telemetry] .text integrity check of process %d: FALSE", tm.Header.Pid)
+				color.Red("[telemetry] .text integrity check of process %d: FALSE", tm.Header.Pid)
+				//TODO: launch extensive memory scan
 			}
 		}
 	}
@@ -132,8 +178,8 @@ func telemetryHandler(conn net.Conn, wg *sync.WaitGroup) {
 // TODO:
 func commandHandler(conn net.Conn, wg *sync.WaitGroup) {
 	defer wg.Done()
-	time.Sleep(time.Second * time.Duration(60))
-	cmd := "exit"
+	//TODO: wait for new commands on channel, then pass it to pipe
+
 	var cmdBuf [64]byte
 	copy(cmdBuf[:], cmd)
 
