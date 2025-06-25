@@ -7,4 +7,14 @@ It consists of 5 main components:
 - Central server; gathers all endpoints' data for a centralized view and provides it to the UI, also forwards commands to agents
 - UI; provides the operator a clear centralized view of alerts, telemetry data, and control over each endpoint
 
-It is still in very early development and not yet ready for use. I aim to get the core (agent, telemetry DLL and kernel driver) working by end of summer 2025, and full beta working by end of 2025.
+For the beta version detection comes from the following scans:
+- Static analysis of files when they are created, modified, or opened(loaded)
+- Memory scanning with YARA. Different areas of memory scanned based on context; both periodic scans and event triggered scans
+- Behavior patterns from API calls, filesystem operations and registry modification
+- Basic thread scanning
+- Network behavior
+
+I'm planning to add some additional scans in the future but these form the core for detections.
+These scans depend on a few types of rules: YARA rules for static and memory scans, API behavior patterns, filesystem behavior patterns and registry behavior patterns. You can use the default rules or add your own by adding files to rules/.
+
+This project is still in very early development and not yet ready for use. I aim to get the core (agent, telemetry DLL and kernel driver) working by end of summer 2025, and full beta working by end of 2025.
