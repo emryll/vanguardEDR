@@ -17,6 +17,7 @@
 typedef struct {
     DWORD pid;
     char  command[64];
+    char  arg[64];
 } COMMAND;
 
 typedef struct {
@@ -76,6 +77,16 @@ typedef struct {
 } API_CALL;
 
 typedef struct {
+    char path[260];
+    FILE_ACTION action;
+} FILE_EVENT;
+
+typedef struct {
+    char path[260];
+    char value[260];
+} REG_EVENT;
+
+typedef struct {
     BOOL result;
     char module[260];
 } TEXT_CHECK;
@@ -84,5 +95,47 @@ typedef struct {
     size_t mismatchCount;
     char mismatches[260][260];
 } FUNC_CHECK;
+
+typedef enum {
+    FILE_CREATE,
+    FILE_MODIFY,
+    FILE_REMOVE,
+    FILE_MOVE,
+} FILE_ACTION;
+
+typedef enum {
+    HOOK_CREATE_REMOTE_THREAD,
+    HOOK_CREATE_REMOTE_THREAD_EX,
+    HOOK_VIRTUAL_PROTECT,
+    HOOK_VIRTUAL_ALLOC,
+    HOOK_VIRTUAL_ALLOC2,
+    HOOK_VIRTUAL_ALLOC_EX,
+    HOOK_NT_ALLOC_VM,
+    HOOK_NT_CREATE_THREAD,
+    HOOK_NT_CREATE_THREAD_EX,
+    HOOK_CREATE_PROCESS_A,
+    HOOK_CREATE_PROCESS_W,
+    HOOK_NT_CREATE_PROCESS,
+    HOOK_NT_CREATE_PROCESS_EX,
+    HOOK_NT_CREATE_USER_PROCESS,
+    HOOK_NT_PROTECT_VM,
+    HOOK_QUEUE_USER_APC,
+    HOOK_NT_QUEUE_APC_THREAD,
+    HOOK_HEAP_ALLOC,
+    HOOK_HEAP_REALLOC,
+    HOOK_NT_UNMAP_VIEW,
+    HOOK_NT_MAP_VIEW,
+    HOOK_GET_PROC_ADDRESS,
+    HOOK_GET_MODULE_A,
+    HOOK_GET_MODULE_W,
+    HOOK_SET_WINDOWS_HOOK_EX_A,
+    HOOK_SET_WINDOWS_HOOK_EX_W,
+    HOOK_WIN_EXEC,
+    HOOK_IS_DEBUGGER_PRESENT,
+    HOOK_CRYPT_CREATE_HASH,
+    HOOK_CRYPT_ENCRYPT,
+    HOOK_ENCRYPT_FILE_A,
+    HOOK_ENCRYPT_FILE_W,
+} HOOK_INDEX;
 
 #endif

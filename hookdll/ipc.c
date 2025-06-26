@@ -14,14 +14,27 @@ void WaiterThread() {
         if (commandPacket.pid == myPid || commandPacket.pid == 0) {
             if (strncmp(commandPacket.command, "exit", 4) == 0) {
                 printf("[i] Received exit command, exiting...\n");
+                //TODO: uninstall hooks
+                UninstallFunctionHooks();
                 CloseHandle(hCommands);
                 CloseHandle(hHeartbeat);
                 CloseHandle(hTelemetry);
                 exit(0);
             }
+            if (strncmp(commandPacket.command, "text", 4) == 0) {
+                PerformIntegrityChecks();
+            }
+            if (strncmp(commandPacket.command, "iat", 3) == 0) {
+                if (strncmp(commandPacket.arg, "all", 3) == 0) {
+                //TODO: perform iat-eat func address comparison on all modules
+    
+                } else {
+                //TODO: perform iat-eat func address comparison on arg
+
+                }
+            }
         }
     }
-    CloseHandle(hCommands);
 }
 
 // returns handle to commands waiter thread
@@ -49,12 +62,10 @@ HANDLE InitializeComms() {
     }
 
     //? create a thread to wait on commands
-    DWORD threadID;
-    HANDLE hThread = CreateThread(NULL, 0, (LPTHREAD_START_ROUTINE)WaiterThread, NULL, 0, &threadID);
+    hThread = CreateThread(NULL, 0, (LPTHREAD_START_ROUTINE)WaiterThread, NULL, 0, NULL);
     if (hThread == NULL) {
         fprintf(stderr, "\n[!] Failed to create thread, error code: 0x%X\n", GetLastError());
     }
-
-    return hThread;
+    return (hThread != NULL);
 }
 
