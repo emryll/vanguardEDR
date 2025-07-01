@@ -41,7 +41,14 @@ func main() {
 		color.Red("\n[!] %s could not be found, ensure the path is correct(error: %v)", path, err)
 		return
 	}
-	//TODO: get yara rules at .\rules\*.yara
+	//* get yara rules at .\rules\*.yara
+	var yaraResults []StaticResult
+	rules, scanner, err := LoadYaraRulesFromFolder(rulesPath)
+	if err != nil || rules == nil || scanner == nil {
+		color.Red("\n[!] Failed to load YARA rules\n\tError: %v", err)
+	} else {
+		yaraRulesFound = true
+	}
 	//* get api patterns at .\rules\*.pattern
 	apiPatterns, err := LoadApiPatternsFromDisk(rulesPath)
 	if err != nil {
@@ -112,7 +119,17 @@ func main() {
 	}
 
 	//TODO: check hash
-	//TODO: check YARA rules
+	if yaraRulesFound {
+		yaraResults, err = YaraScanFile(scanner, path)
+		if err != nil {
+			color.Red("\n[!] Failed to perform YARA scan on file!\n\tError: %v", err)
+		}
+		scanner.Destroy()
+		rules.Destroy()
+		for _, m := range yaraResults {
+			total += m.Score
+		}
+	}
 
 	if isPe {
 		file, err = pe.Open(path)
@@ -161,11 +178,16 @@ func main() {
 	//* portray results
 	stars := "***************************************************************************"
 	fmt.Printf("\n%s\n\n", stars)
-	//TODO less important yara rules
+	//* less important yara rules
+	fmt.Println("\t\t{ YARA-X pattern matches }")
+	for _, match := range yaraResults {
+		match.Print()
+	}
+	fmt.Printf("\n%s\n", stars)
 
 	//* imported funcs
 	if len(importedFuncs) > 0 {
-		fmt.Println("\t{ Suspicious imported functions }")
+		fmt.Println("\t\t{ Suspicious imported functions }")
 		for _, fn := range importedFuncs {
 			fn.Print()
 		}
@@ -174,7 +196,7 @@ func main() {
 
 	//* api patterns
 	if len(importPatterns) > 0 {
-		fmt.Println("\t{ Suspicious function patterns }")
+		fmt.Println("\t\t{ Suspicious function patterns }")
 		for _, pattern := range importPatterns {
 			pattern.Print()
 		}
@@ -183,7 +205,7 @@ func main() {
 
 	//* streams
 	if streamScore > 0 {
-		fmt.Println("\t{ Alternative data streams }")
+		fmt.Println("\t\t{ Alternative data streams }")
 		for _, stream := range streamResults {
 			stream.Print()
 		}
@@ -192,7 +214,7 @@ func main() {
 
 	//* proxy dll
 	if proxyScore > 0 {
-		fmt.Println("\t{ Proxy DLL analysis }")
+		fmt.Println("\t\t{ Proxy DLL analysis }")
 		for _, result := range proxyDllResults {
 			result.Print()
 		}
@@ -225,7 +247,7 @@ func main() {
 		case 1:
 			color.Green("\t%s has a valid digital certificate\n", baseName)
 		case 2:
-			color.Red("\t%s has a hash mismatch in digital certificate indicating tampering!\n", baseName)
+			color.Red("\t%s has a hash mismatch in digital certificate, indicating tampering!\n", baseName)
 		}
 	}
 
