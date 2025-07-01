@@ -2,7 +2,6 @@ package main
 
 import (
 	"fmt"
-	"os"
 	"path/filepath"
 	"strings"
 
@@ -45,11 +44,22 @@ func CheckStreams(path string) ([]StaticResult, int, error) {
 			color.Red("[!] Failed to read %s:%s magic, error: %v", path, stream, err)
 		}
 		if hasExecutableExtension(stream) || isPe {
-			results = append(results, StaticResult{Description: "Executable file type in alternative stream", Score: 40})
+			results = append(results, StaticResult{Description: "Executable file type in alternative stream", Score: 40, Severity: 2})
 			total += 40
 			continue
 		}
-		//TODO: is the other stream very high entropy? +30
+
+		//* Check entropy of stream
+		entropy, err := GetEntropyOfFile(path + ":" + stream)
+		if err != nil {
+			color.Red("[!] Failed to get entropy of %s!\n\tError: %v", path+":"+stream, err)
+		} else {
+			if entropy > 7.5 {
+				desc := fmt.Sprintf("%s alternative data stream has entropy >7.5 (%f)", stream, entropy)
+				results = append(results, StaticResult{Description: desc, Score: 25, Severity: 1})
+				total += 25
+			}
+		}
 
 		//* Mark of The Web
 		if stream == "Zone.Identifier" {
@@ -62,16 +72,16 @@ func CheckStreams(path string) ([]StaticResult, int, error) {
 			case 0: // local machine
 				continue
 			case 1: // intranet
-				results = append(results, StaticResult{Description: "File from intranet", Score: 5})
+				results = append(results, StaticResult{Description: "File from intranet", Score: 5, Severity: 0})
 				total += 5
 			case 2: // trusted site
-				results = append(results, StaticResult{Description: "File from trusted site", Score: 5})
+				results = append(results, StaticResult{Description: "File from trusted site", Score: 5, Severity: 0})
 				total += 5
 			case 3: // internet
-				results = append(results, StaticResult{Description: "File from the Internet", Score: 15})
+				results = append(results, StaticResult{Description: "File from the Internet", Score: 15, Severity: 1})
 				total += 15
 			case 4: // restricted sites
-				results = append(results, StaticResult{Description: "File from restricted site", Score: 30})
+				results = append(results, StaticResult{Description: "File from restricted site", Score: 30, Severity: 2})
 				total += 30
 			}
 		} else if stream != ":$DATA" {
@@ -103,7 +113,7 @@ func CheckForProxyDll(path string, file *pe.File) ([]StaticResult, int, error) {
 	baseName := strings.ToLower(filepath.Base(path))
 	for _, lib := range libs {
 		if strings.ToLower(lib) == baseName {
-			results = append(results, StaticResult{Description: "Imports library of same name as own, likely proxy DLL", Score: 20})
+			results = append(results, StaticResult{Description: "Imports library of same name as own, likely proxy DLL", Score: 20, Severity: 1})
 			total += 20
 			break
 		}
@@ -129,10 +139,10 @@ func CheckForProxyDll(path string, file *pe.File) ([]StaticResult, int, error) {
 	}
 	if fwdCounter > 5 {
 		desc := fmt.Sprintf("Forward exports %d functions of same name", fwdCounter)
-		results = append(results, StaticResult{Description: desc, Score: 40})
+		results = append(results, StaticResult{Description: desc, Score: 40, Severity: 2})
 		total += 40
 		if sameLibName {
-			results = append(results, StaticResult{Description: "Forward exports to library of same name", Score: 10})
+			results = append(results, StaticResult{Description: "Forward exports to library of same name", Score: 10, Severity: 1})
 			total += 10
 		}
 		return results, total, nil
@@ -159,7 +169,7 @@ func CheckForProxyDll(path string, file *pe.File) ([]StaticResult, int, error) {
 	}
 	if impExpCounter > 3 {
 		desc := fmt.Sprintf("Imports and exports %d same functions, likely a proxy DLL", impExpCounter)
-		results = append(results, StaticResult{Description: desc, Score: 40})
+		results = append(results, StaticResult{Description: desc, Score: 40, Severity: 2})
 		total += 40
 	}
 	return results, total, nil
@@ -181,8 +191,10 @@ func CheckForMaliciousImports(path string, file *pe.File) ([]StaticResult, int, 
 	for _, fn := range importsList {
 		imports[fn] = true
 		parts := strings.Split(fn, ":")
-		if score, exists := maliciousApis[parts[0]]; exists {
-			singleFuncScore += score
+		if entry, exists := maliciousApis[parts[0]]; exists {
+			//? all functions are added seperately to results, but not added to total yet
+			results = append(results, StaticResult{Description: entry.Name, Score: entry.Score, Severity: entry.Severity, Tag: "Import"})
+			singleFuncScore += entry.Score
 			singleFuncCounter++
 		}
 	}
@@ -190,8 +202,8 @@ func CheckForMaliciousImports(path string, file *pe.File) ([]StaticResult, int, 
 		if singleFuncScore > MAX_INDIVIDUAL_FN_SCORE {
 			singleFuncScore = MAX_INDIVIDUAL_FN_SCORE
 		}
-		desc := fmt.Sprintf("File imports %d suspicious functions", singleFuncCounter)
-		results = append(results, StaticResult{Description: desc, Score: singleFuncScore})
+		desc := fmt.Sprintf("File imports %d suspicious functions (total score added from imports)", singleFuncCounter)
+		results = append(results, StaticResult{Description: desc, Score: singleFuncScore, Severity: 1})
 		total += singleFuncScore
 	}
 	//* check api patterns
@@ -271,7 +283,7 @@ func CheckSections(file *pe.File) ([]StaticResult, int, error) {
 		//* inspect name
 		if hasPackerName(section.Name) && !packer {
 			desc := fmt.Sprintf("File has section named \"%s\" indicating packer", section.Name)
-			results = append(results, StaticResult{Description: desc, Score: 35})
+			results = append(results, StaticResult{Description: desc, Score: 35, Severity: 2, Tag: "Packer"})
 			total += 35
 			packer = true
 		}
@@ -282,7 +294,7 @@ func CheckSections(file *pe.File) ([]StaticResult, int, error) {
 			// common section like .rsrc marked as executable is more suspicious
 			if isCommonSection(section.Name) && !xSection {
 				desc := fmt.Sprintf("%s section set as executable or contains code, highly unusual", section.Name)
-				results = append(results, StaticResult{Description: desc, Score: 40})
+				results = append(results, StaticResult{Description: desc, Score: 40, Severity: 2})
 				total += 40
 				xSection = true
 			} else {
@@ -302,7 +314,7 @@ func CheckSections(file *pe.File) ([]StaticResult, int, error) {
 	}
 	if xSectionCount > 0 {
 		desc := fmt.Sprintf("Contains %d added sections containing executable memory or marked as code", xSectionCount)
-		results = append(results, StaticResult{Description: desc, Score: 30})
+		results = append(results, StaticResult{Description: desc, Score: 30, Severity: 2})
 		total += 30
 	}
 	if highEntropyCount > 0 {
@@ -312,12 +324,13 @@ func CheckSections(file *pe.File) ([]StaticResult, int, error) {
 		} else {
 			desc = fmt.Sprintf("Contains %d sections with entropy >7.5", highEntropyCount)
 		}
-		results = append(results, StaticResult{Description: desc, Score: 20})
+		results = append(results, StaticResult{Description: desc, Score: 20, Severity: 1})
 		total += 20
 	}
 	return results, total, nil
 }
 
+/*
 func main() {
 	if len(os.Args) < 2 {
 		color.Red("[!] Not enough args")
@@ -393,3 +406,4 @@ func main() {
 		fmt.Printf("\t\t\\==={ Entropy: %f\n", entropy)
 	}
 }
+*/

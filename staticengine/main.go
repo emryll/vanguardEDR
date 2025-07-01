@@ -1,13 +1,18 @@
 package main
 
 import (
+	"bufio"
 	"fmt"
 	"os"
+	"path/filepath"
+	"strings"
+
+	"github.com/Binject/debug/pe"
 
 	"github.com/fatih/color"
 )
 
-//TODO: C function to fetch IAT functions
+//TODO: make results text be white while [*] and (+%d) are colored
 
 func main() {
 	if len(os.Args) < 2 {
@@ -24,49 +29,115 @@ func main() {
 		color.Yellow("\t%s <path> [rule dir]", os.Args[0])
 		fmt.Printf("\t- Specify directory to search for rules\n")
 	}
-	path := os.Args[1]
-	_, err := os.Stat(path); err != nil {
-		color.Red("\n[!] %s could not be found, ensure the path is correct", path)
+	var (
+		rulesPath      = ""
+		yaraRulesFound = false
+		path           = os.Args[1]
+	)
+	if len(os.Args) > 2 && os.Args[2][0] != '-' {
+		rulesPath = os.Args[2]
+	}
+	if _, err := os.Stat(path); err != nil {
+		color.Red("\n[!] %s could not be found, ensure the path is correct(error: %v)", path, err)
 		return
 	}
+	//TODO: get yara rules at .\rules\*.yara
+	//* get api patterns at .\rules\*.pattern
+	apiPatterns, err := LoadApiPatternsFromDisk(rulesPath)
+	if err != nil {
+		color.Red("[!] Failed to load API patterns from disk!\n\tError: %v", err)
+	}
+	//* get malicious apis list at .\rules\*.malapi
+	malapi, err := LoadMaliciousApiListFromDisk(rulesPath)
+	if err != nil {
+		color.Red("[!] Failed to load API patterns from disk!\n\tError: %v", err)
+	}
+
+	//* if no rules found, ask if user wants to install default ruleset
+	if !yaraRulesFound && (apiPatterns == nil || len(apiPatterns) == 0) && (malapi == nil || len(malapi) == 0) {
+		color.Red("\n[!] No YARA rules, API patterns or malicious API list was found!")
+		var answer = "empty"
+		for strings.ToLower(answer) != "y" && strings.ToLower(answer) != "n" && answer != "" {
+			fmt.Printf("[*] Would you like to install default ruleset? (y/n) ")
+			reader := bufio.NewReader(os.Stdin)
+			input, err := reader.ReadString('\n')
+			if err != nil {
+				color.Red("\n[!] Failed to read input!\n\tError: %v", err)
+				answer = "n"
+			}
+			answer = strings.TrimSpace(input)
+			fmt.Printf("\n")
+			if strings.ToLower(answer) != "y" && strings.ToLower(answer) != "n" && answer != "" {
+				color.Red("\tYou entered %s, please enter y for yes or n for no\n", answer)
+			}
+		}
+		if strings.ToLower(answer) == "y" {
+			err := InstallDefaultRuleSetFromGithub("")
+			if err == nil {
+				fmt.Printf("[i] You will have to restart to use the newly installed rules\n\t")
+				for _, arg := range os.Args {
+					color.Cyan("%s ", arg)
+				}
+				fmt.Printf("\n")
+				return
+			} else {
+				color.Red("\n[!] Failed to install default ruleset!\n\tError: %v", err)
+			}
+		}
+	}
+
 	fmt.Printf("[i] Analyzing %s...\n", path)
 	var (
-		total = 0
-		results []StaticResult{}
-		importedFuncs []StaticResult{}
-		importPatterns []StaticResult{}
-		
+		total           = 0
+		isPe            = false
+		file            *pe.File
+		results         = []StaticResult{}
+		importedFuncs   = []StaticResult{}
+		importPatterns  = []StaticResult{}
+		malimpResults   = []StaticResult{}
+		proxyDllResults = []StaticResult{}
+		sectionResults  = []StaticResult{}
+		malScore        = 0
+		proxyScore      = 0
+		sectionScore    = 0
 	)
 
-	//TODO: check magic
+	SortMagic()
+	maxLen := len(magicToType[0].Bytes)
+	magic, err := GetMagic(path, maxLen)
+	if err != nil {
+		color.Red("\n[!] Failed to get magic bytes of file!\n\tError: %v", err)
+	} else if magic == "DOS MZ / PE File (.exe, .dll, ++)" {
+		isPe = true
+	}
+
 	//TODO: check hash
 	//TODO: check YARA rules
 
-	//TODO: read api pattern rules
-	//TODO: read malapi list
-
-	file, err := pe.Open(path)
-	if err != nil {
-		color.Red("[!] Failed to open %s: %v", path, err)
-		return
-	}
-	defer file.Close()
-
-	if len(apiPatterns) > 0 || len(maliciousApis) > 0 { 
-		malimpResults, malScore, err := CheckForMaliciousImports(path, file)
+	if isPe {
+		file, err = pe.Open(path)
 		if err != nil {
-			color.Red("[!] Failed to check imports!\n\tError: %v", err)
+			color.Red("[!] Failed to open %s: %v", path, err)
+			return
 		}
-		results = append(results, malimpResults...)
-		total += malScore
-	}
+		defer file.Close()
 
-	proxyDllResults, proxyScore, err := CheckForProxyDll(path, file)
-	if err != nil {
-		color.Red("[!] Failed to check if %s is a proxy DLL!\n\tError: %v", err)
+		if len(apiPatterns) > 0 || len(maliciousApis) > 0 {
+			malimpResults, malScore, err = CheckForMaliciousImports(path, file)
+			if err != nil {
+				color.Red("[!] Failed to check imports!\n\tError: %v", err)
+			}
+			results = append(results, malimpResults...)
+			total += malScore
+		}
+
+		proxyDllResults, proxyScore, err = CheckForProxyDll(path, file)
+		if err != nil {
+			color.Red("[!] Failed to check if %s is a proxy DLL!\n\tError: %v", err)
+		}
+		results = append(results, proxyDllResults...)
+		total += proxyScore
 	}
-	results = append(results, proxyDllResults...)
-	total += proxyScore
 
 	streamResults, streamScore, err := CheckStreams(path)
 	if err != nil {
@@ -75,19 +146,21 @@ func main() {
 	results = append(results, streamResults...)
 	total += streamScore
 
-	sectionResults, sectionScore, err := CheckSections(file)
-	if err != nil {
-		color.Red("[!] Failed to check sections\n\tError: %v", err)
+	if isPe {
+		sectionResults, sectionScore, err = CheckSections(file)
+		if err != nil {
+			color.Red("[!] Failed to check sections\n\tError: %v", err)
+		}
+		results = append(results, sectionResults...)
+		total += sectionScore
 	}
-	results = append(results, sectionResults...)
-	total += sectionScore
 
 	if total > 100 {
 		total = 100
 	}
 	//* portray results
-	starts := "****************************************************************"
-	
+	stars := "***************************************************************************"
+	fmt.Printf("\n%s\n\n", stars)
 	//TODO less important yara rules
 
 	//* imported funcs
@@ -96,7 +169,7 @@ func main() {
 		for _, fn := range importedFuncs {
 			fn.Print()
 		}
-		fmt.Println(stars)
+		fmt.Printf("\n%s\n", stars)
 	}
 
 	//* api patterns
@@ -105,7 +178,7 @@ func main() {
 		for _, pattern := range importPatterns {
 			pattern.Print()
 		}
-		fmt.Println(stars)
+		fmt.Printf("\n%s\n", stars)
 	}
 
 	//* streams
@@ -114,7 +187,7 @@ func main() {
 		for _, stream := range streamResults {
 			stream.Print()
 		}
-		fmt.Println(stars)
+		fmt.Printf("\n%s\n", stars)
 	}
 
 	//* proxy dll
@@ -122,34 +195,65 @@ func main() {
 		fmt.Println("\t{ Proxy DLL analysis }")
 		for _, result := range proxyDllResults {
 			result.Print()
-		fmt.Println(stars)
 		}
+		fmt.Printf("\n%s\n", stars)
 	}
 	//TODO critical yara rules
 	//TODO hash lookup
 
+	//* magic
+	fmt.Printf("\n\tMagic bytes: %s\n", magic)
+
+	//* mime type
+	mime, err := GetMimeType(path)
+	if err != nil {
+		color.Red("[!] Failed to get MIME type!\n\tError: %v", err)
+	} else {
+		fmt.Printf("\tMIME type: %s\n", mime)
+	}
+
+	baseName := filepath.Base(path)
+
+	//* check digital cert
+	r, err := IsSignatureValid(path)
+	if err != nil {
+		color.Red("\n[!] Failed to check digital certificate!\n\tError: %v", err)
+	} else {
+		switch r {
+		case 0:
+			fmt.Printf("\t%s does not have digital certificate\n\n", baseName)
+		case 1:
+			color.Green("\t%s has a valid digital certificate\n", baseName)
+		case 2:
+			color.Red("\t%s has a hash mismatch in digital certificate indicating tampering!\n", baseName)
+		}
+	}
+
 	//* total score
+	yellow := color.New(color.FgYellow, color.Bold)
 	switch {
 	case total < 30:
-		green := color.New(color.FgGreen, color.Bold)
-		color.Green("\t[*] Total score from static analysis of %s:")
-		green.Printf("\t\t\t%d", total)
+		green := color.New(color.FgGreen)
+		green.Printf("\t[*] ")
+		fmt.Printf("Total score from static analysis of %s:\n", baseName)
+		yellow.Printf("\t\t\t%d", total)
 		color.Green("/100, looks quite normal.")
 	case total < 50:
-		yellow := color.New(color.FgYellow, color.Bold)
-		color.Yellow("\t[*] Total score from static analysis of %s:")
+		yellow.Printf("\t[*] ")
+		fmt.Printf("Total score from static analysis of %s:\n", baseName)
 		yellow.Printf("\t\t\t%d", total)
 		color.Yellow("/100, moderately suspicious...")
 	case total < 70:
-		yellow := color.New(color.FgYellow, color.Bold)
-		color.Yellow("\t[*] Total score from static analysis of %s:")
+		yellow.Printf("\t[*] ")
+		fmt.Printf("Total score from static analysis of %s:\n", baseName)
 		yellow.Printf("\t\t\t%d", total)
 		color.Yellow("/100, looks quite suspicious!")
 	case total >= 70:
 		red := color.New(color.FgRed, color.Bold)
-		color.Red("\t[*] Total score from static analysis of %s:")
-		red.Printf("\t\t\t%d", total)
+		red.Printf("\t[*] ")
+		fmt.Printf("Total score from static analysis of %s:\n", baseName)
+		yellow.Printf("\t\t\t%d", total)
 		color.Red("/100, looks ")
-		red.Printf("very suspicious\n!")
+		red.Printf("very suspicious!\n")
 	}
 }
