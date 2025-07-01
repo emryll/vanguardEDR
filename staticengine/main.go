@@ -20,14 +20,23 @@ func main() {
 		fmt.Printf("[i] Usage: %s <path> [rule dir] [flags]\n\t\"%s help\" for extended info", os.Args[0], os.Args[0])
 		return
 	} else if os.Args[1] == "help" {
-		fmt.Printf("This is a static analysis tool to give a score 0-100 on how likely the file is malware, as well as differentiating where detection comes from")
+		baseName := filepath.Base(os.Args[0])
+		fmt.Println("This is a static analysis tool to give a score 0-100 on how likely the file is malware,\n\tas well as differentiating where detection comes from.\n")
 		cyan := color.New(color.FgCyan, color.Bold)
-		cyan.Printf("\tFor full checks you need YARA rules and a list of API patterns and malicious APIs")
-		color.Cyan("\t\t+ do \"%s install\" to install default ruleset, or create your own")
+		cyan.Printf("For full checks you need YARA rules and a list of API patterns and malicious APIs\n")
+		color.Cyan("\t+ do \"%s install\" to install default ruleset, or create your own", baseName)
 		color.Cyan("\t\t(YARA rules need to be *.yara, patterns need to be *.pattern, )\n")
-		fmt.Printf("\t[*] Default directory for rules is .\\rules\n\n")
-		color.Yellow("\t%s <path> [rule dir]", os.Args[0])
+		fmt.Printf("\t\t[*] Default directory for rules is .\\rules [*]\n\n")
+		fmt.Printf("\t%s <path> [rule dir]", baseName)
 		fmt.Printf("\t- Specify directory to search for rules\n")
+		return
+	} else if os.Args[1] == "install" {
+		err := InstallDefaultRuleSetFromGithub("")
+		if err != nil {
+			color.Red("\n[!] Failed to install default rules\n\tError: %v", err)
+		} else {
+			return
+		}
 	}
 	var (
 		rulesPath      = ""
