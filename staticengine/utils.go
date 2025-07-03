@@ -152,19 +152,54 @@ func (r StaticResult) Print() {
 	case 0:
 		green := color.New(color.FgGreen, color.Bold)
 		green.Printf("[*] ")
-		fmt.Printf("%s ", r.Description) //text in white so its easier to read
-		green.Printf("(+%d)\n", r.Score)
+		if r.Name == "" {
+			fmt.Printf("%s ", r.Description) //text in white so its easier to read
+			green.Printf("(+%d)\n", r.Score)
+		} else {
+			fmt.Printf("%s ", r.Name) //text in white so its easier to read
+			green.Printf("(+%d)\n", r.Score)
+			if r.Description != "" {
+				fmt.Printf("\t[?] %s\n", r.Description)
+			}
+		}
 	case 1:
 		yellow := color.New(color.FgYellow, color.Bold)
 		yellow.Printf("[*] ")
-		fmt.Printf("%s ", r.Description)
-		yellow.Printf("(+%d)\n", r.Score)
+		if r.Name == "" {
+			fmt.Printf("%s ", r.Description)
+			yellow.Printf("(+%d)\n", r.Score)
+		} else {
+			fmt.Printf("%s ", r.Name)
+			yellow.Printf("(+%d)\n", r.Score)
+			if r.Description != "" {
+				fmt.Printf("\t[?] %s\n", r.Description)
+			}
+		}
 	case 2:
 		red := color.New(color.FgRed)
 		red.Printf("[*] ")
-		fmt.Printf("%s ", r.Description)
-		red.Add(color.Bold)
-		red.Printf("(+%d)\n", r.Score)
+		if r.Name == "" {
+			fmt.Printf("%s ", r.Description)
+			red.Add(color.Bold)
+			red.Printf("(+%d)\n", r.Score)
+		} else {
+			fmt.Printf("%s ", r.Name)
+			red.Add(color.Bold)
+			red.Printf("(+%d)\n", r.Score)
+			if r.Description != "" {
+				fmt.Printf("\t[?] %s\n", r.Description)
+			}
+		}
+	}
+	if len(r.Category) > 0 {
+		fmt.Printf("\tCategory: ")
+		for i, t := range r.Category {
+			fmt.Printf("%s", t)
+			if len(r.Category) > i+1 {
+				fmt.Printf(", ")
+			}
+		}
+		fmt.Printf("\n")
 	}
 }
 

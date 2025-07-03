@@ -11,8 +11,10 @@ import (
 )
 
 type StaticResult struct {
+	Name        string
 	Description string
 	Tag         string
+	Category    []string
 	Score       int
 	Severity    int // 0, 1, 2 (low, medium, high)
 }
@@ -189,11 +191,11 @@ func CheckForMaliciousImports(path string, file *pe.File) ([]StaticResult, int, 
 	}
 	//* check individual functions and create map of imports
 	for _, fn := range importsList {
-		imports[fn] = true
 		parts := strings.Split(fn, ":")
+		imports[parts[0]] = true
 		if entry, exists := maliciousApis[parts[0]]; exists {
 			//? all functions are added seperately to results, but not added to total yet
-			results = append(results, StaticResult{Description: entry.Name, Score: entry.Score, Severity: entry.Severity, Tag: "Import"})
+			results = append(results, StaticResult{Name: entry.Name, Score: entry.Score, Severity: entry.Severity, Tag: "Import", Category: entry.Tag})
 			singleFuncScore += entry.Score
 			singleFuncCounter++
 		}
