@@ -3,6 +3,7 @@ package main
 import (
 	"bufio"
 	"bytes"
+	"crypto/sha256"
 	"fmt"
 	"math"
 	"net/http"
@@ -352,4 +353,45 @@ func GetMagic(path string, maxLen int) (string, error) {
 		}
 	}
 	return "Unknown", nil
+}
+
+func ComputeFileSha256(path string) (string, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return "", err
+	}
+	hasher := sha256.New()
+	hasher.Write(data)
+	hash := hasher.Sum(nil)
+	return fmt.Sprintf("%x", hash), nil
+}
+
+func (r HashLookup) Print() {
+	switch r.Status {
+	case "ok":
+		red := color.New(color.FgRed)
+		red.Printf("[*] ")
+		fmt.Println("Hash found in malwarebazaar database!")
+		for _, d := range r.Data {
+			fmt.Printf("\n")
+			fmt.Printf("\tLink: https://bazaar.abuse.ch/sample/%s\n", r.Sha256)
+			if d.Signature != "" && d.Signature != "null" {
+				fmt.Printf("\tSignature: %s\n", d.Signature)
+			}
+			for _, rule := range d.YaraRules {
+				fmt.Println("\n\tYara rule:")
+				fmt.Printf("\t\tName: %s\n", rule.Name)
+				if rule.Description != "" && rule.Description != "null" {
+					fmt.Printf("\t\tDescription: %s\n", rule.Description)
+				}
+			}
+			fmt.Printf("\n")
+		}
+
+	case "hash_not_found":
+		green := color.New(color.FgGreen)
+		green.Printf("[*] ")
+		fmt.Println("Hash not found in malwarebazaar database")
+		fmt.Printf("\n")
+	}
 }
