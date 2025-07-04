@@ -15,15 +15,6 @@ import (
 	"github.com/fatih/color"
 )
 
-type StaticResult struct {
-	Name        string
-	Description string
-	Tag         string
-	Category    []string
-	Score       int
-	Severity    int // 0, 1, 2 (low, medium, high)
-}
-
 func LookupFileHash(path string, authKey string) (HashLookup, error) {
 	hash, err := ComputeFileSha256(path)
 	if err != nil {

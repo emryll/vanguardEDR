@@ -22,15 +22,6 @@ var (
 	HIGH_FN_DEFAULT_SCORE     = 6
 )
 
-// TODO change name to id
-type ApiPattern struct {
-	Name        string     `json:"name"`
-	Description string     `json:"description"`
-	ApiCalls    [][]string `json:"api_calls"` // lets you define all possible options, so can do both kernel32 and nt
-	Severity    int        `json:"severity"`  // 0, 1, 2
-	Score       int        `json:"score"`
-}
-
 // json file with each pattern like so: "component1" { "func1", "func2" } "component2" {...} ...
 // severity is low || medium || high and only affects color. score is actual score
 func LoadApiPatternsFromDisk(path string) ([]ApiPattern, error) {
@@ -93,13 +84,6 @@ func LoadApiPatternsFromDisk(path string) ([]ApiPattern, error) {
 		fmt.Printf("[i] Found %d API pattern files\n", count)
 	}
 	return patterns, nil
-}
-
-type MalApi struct {
-	Name     string   `json:"name"`
-	Severity int      `json:"severity"`
-	Score    int      `json:"score"`
-	Tag      []string `json:"tag"`
 }
 
 // json file with each function like so: "function", "severity", "score"
