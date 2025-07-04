@@ -63,8 +63,6 @@ func LookupSha256Hash(hash string, authKey string) (HashLookup, error) {
 		return HashLookup{}, err
 	}
 	result.Sha256 = hash
-
-	fmt.Println(string(body))
 	return result, nil
 }
 

@@ -12,7 +12,7 @@ import (
 var (
 	apiPatterns               []ApiPattern
 	maliciousApis             map[string]MalApi
-	DEFAULT_PATTERN_DIR       = ".\\rules"
+	DEFAULT_PATTERN_DIR       = "./rules"
 	DEFAULT_PATTERN_FILENAME  = "apipatterns.json"
 	DEFAULT_FUNCLIST_FILENAME = "malapi.json"
 	MAX_INDIVIDUAL_FN_SCORE   = 20
@@ -31,7 +31,7 @@ func LoadApiPatternsFromDisk(path string) ([]ApiPattern, error) {
 		dirPath  string
 	)
 	if path == "" {
-		filePath = filepath.Join(DEFAULT_PATTERN_DIR, DEFAULT_PATTERN_FILENAME)
+		dirPath = DEFAULT_PATTERN_DIR
 	} else {
 		info, err := os.Stat(path)
 		if err != nil {
@@ -91,7 +91,7 @@ func LoadApiPatternsFromDisk(path string) ([]ApiPattern, error) {
 func LoadMaliciousApiListFromDisk(path string) (map[string]MalApi, error) {
 	var filePath string
 	if path == "" {
-		filePath = filepath.Join(DEFAULT_PATTERN_DIR, DEFAULT_PATTERN_FILENAME)
+		filePath = filepath.Join(DEFAULT_PATTERN_DIR, DEFAULT_FUNCLIST_FILENAME)
 	} else {
 		info, err := os.Stat(path)
 		if err != nil {

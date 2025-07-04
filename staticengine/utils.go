@@ -385,13 +385,16 @@ func (r HashLookup) Print() {
 					fmt.Printf("\t\tDescription: %s\n", rule.Description)
 				}
 			}
-			fmt.Printf("\n")
 		}
 
 	case "hash_not_found":
-		green := color.New(color.FgGreen)
-		green.Printf("[*] ")
-		fmt.Println("Hash not found in malwarebazaar database")
-		fmt.Printf("\n")
+		color.Green("[*] Hash not found in malwarebazaar database")
 	}
+}
+
+func (r HashLookup) IsEmpty() bool {
+	if r.Status != "ok" && r.Status != "hash_not_found" && len(r.Data) == 0 {
+		return true
+	}
+	return false
 }

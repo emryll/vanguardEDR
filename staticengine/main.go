@@ -117,7 +117,13 @@ func main() {
 		isPe = true
 	}
 
-	//TODO: check hash
+	mbAuthKey := os.Getenv("MALWAREBAZAAR_KEY")
+	if mbAuthKey == "" {
+		color.Red("\n[!] Failed to get malwarebazaar API auth key")
+		fmt.Println("\tSet MALWAREBAZAAR_KEY environment variable to your API key")
+		fmt.Println("\tGet one for free at https://auth.abuse.ch/user/me")
+	}
+
 	if yaraRulesFound {
 		yaraResults, err = YaraScanFile(scanner, path)
 		if err != nil {
@@ -216,7 +222,7 @@ func main() {
 
 	//* streams
 	if streamScore > 0 {
-		fmt.Println("\t\t{ Alternative data streams }")
+		fmt.Println("\n\t\t{ Alternative data streams }")
 		for _, stream := range streamResults {
 			stream.Print()
 		}
@@ -225,14 +231,26 @@ func main() {
 
 	//* proxy dll
 	if proxyScore > 0 {
-		fmt.Println("\t\t{ Proxy DLL analysis }")
+		fmt.Println("\n\t\t{ Proxy DLL analysis }")
 		for _, result := range proxyDllResults {
 			result.Print()
 		}
 		fmt.Printf("\n%s\n", stars)
 	}
 	//TODO critical yara rules
-	//TODO hash lookup
+	var hl HashLookup
+	if mbAuthKey != "" {
+		hl, err = LookupFileHash(path, mbAuthKey)
+		if err != nil {
+			color.Red("\n[!] Failed to lookup file hash: %v", err)
+		} else {
+			if !hl.IsEmpty() {
+				fmt.Println("\n\t\t{ Hash lookup }")
+				hl.Print()
+				fmt.Printf("\n%s\n", stars)
+			}
+		}
+	}
 
 	//* magic
 	fmt.Printf("\n\tMagic bytes: %s\n", magic)
