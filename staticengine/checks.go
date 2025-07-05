@@ -1,7 +1,12 @@
 package main
 
 import (
+	"bytes"
+	"encoding/json"
 	"fmt"
+	"io/ioutil"
+	"net/http"
+	"net/url"
 	"path/filepath"
 	"strings"
 
@@ -10,21 +15,56 @@ import (
 	"github.com/fatih/color"
 )
 
-type StaticResult struct {
-	Description string
-	Tag         string
-	Score       int
-	Severity    int // 0, 1, 2 (low, medium, high)
-}
-
-/*
-// true indicates a match
-
-	func CheckHash(file *os.File) (bool, error) {
-		//TODO: malwarebazaar hash lookup with api
+func LookupFileHash(path string, authKey string) (HashLookup, error) {
+	hash, err := ComputeFileSha256(path)
+	if err != nil {
+		return HashLookup{}, err
 	}
 
-*/
+	result, err := LookupSha256Hash(hash, authKey)
+	if err != nil {
+		return HashLookup{}, err
+	}
+
+	return result, nil
+}
+
+func LookupSha256Hash(hash string, authKey string) (HashLookup, error) {
+	/*hash, err := ComputeFileSha256(path)
+	if err != nil {
+		return false, err
+	}*/
+	form := url.Values{}
+	form.Set("query", "get_info")
+	form.Set("hash", hash)
+
+	req, err := http.NewRequest("POST", "https://mb-api.abuse.ch/api/v1/", bytes.NewBufferString(form.Encode()))
+	if err != nil {
+		return HashLookup{}, err
+	}
+
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req.Header.Set("Auth-Key", authKey)
+
+	client := &http.Client{}
+	resp, err := client.Do(req)
+	if err != nil {
+		return HashLookup{}, err
+	}
+	defer resp.Body.Close()
+
+	body, err := ioutil.ReadAll(resp.Body)
+	if err != nil {
+		return HashLookup{}, err
+	}
+	var result HashLookup
+	err = json.Unmarshal(body, &result)
+	if err != nil {
+		return HashLookup{}, err
+	}
+	result.Sha256 = hash
+	return result, nil
+}
 
 func CheckStreams(path string) ([]StaticResult, int, error) {
 	var results []StaticResult
@@ -189,11 +229,11 @@ func CheckForMaliciousImports(path string, file *pe.File) ([]StaticResult, int, 
 	}
 	//* check individual functions and create map of imports
 	for _, fn := range importsList {
-		imports[fn] = true
 		parts := strings.Split(fn, ":")
+		imports[parts[0]] = true
 		if entry, exists := maliciousApis[parts[0]]; exists {
 			//? all functions are added seperately to results, but not added to total yet
-			results = append(results, StaticResult{Description: entry.Name, Score: entry.Score, Severity: entry.Severity, Tag: "Import"})
+			results = append(results, StaticResult{Name: entry.Name, Score: entry.Score, Severity: entry.Severity, Tag: "Import", Category: entry.Tag})
 			singleFuncScore += entry.Score
 			singleFuncCounter++
 		}

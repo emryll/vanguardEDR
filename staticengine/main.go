@@ -1,11 +1,9 @@
 package main
 
 import (
-	"bufio"
 	"fmt"
 	"os"
 	"path/filepath"
-	"strings"
 
 	"github.com/Binject/debug/pe"
 
@@ -59,48 +57,49 @@ func main() {
 		yaraRulesFound = true
 	}
 	//* get api patterns at .\rules\*.pattern
-	apiPatterns, err := LoadApiPatternsFromDisk(rulesPath)
+	apiPatterns, err = LoadApiPatternsFromDisk(rulesPath)
 	if err != nil {
 		color.Red("[!] Failed to load API patterns from disk!\n\tError: %v", err)
 	}
+	fmt.Printf("[i] Loaded %d API patterns\n", len(apiPatterns))
 	//* get malicious apis list at .\rules\*.malapi
-	malapi, err := LoadMaliciousApiListFromDisk(rulesPath)
+	maliciousApis, err = LoadMaliciousApiListFromDisk(rulesPath)
 	if err != nil {
-		color.Red("[!] Failed to load API patterns from disk!\n\tError: %v", err)
+		color.Red("[!] Failed to load malicious API list from disk!\n\tError: %v", err)
 	}
-
-	//* if no rules found, ask if user wants to install default ruleset
-	if !yaraRulesFound && (apiPatterns == nil || len(apiPatterns) == 0) && (malapi == nil || len(malapi) == 0) {
-		color.Red("\n[!] No YARA rules, API patterns or malicious API list was found!")
-		var answer = "empty"
-		for strings.ToLower(answer) != "y" && strings.ToLower(answer) != "n" && answer != "" {
-			fmt.Printf("[*] Would you like to install default ruleset? (y/n) ")
-			reader := bufio.NewReader(os.Stdin)
-			input, err := reader.ReadString('\n')
-			if err != nil {
-				color.Red("\n[!] Failed to read input!\n\tError: %v", err)
-				answer = "n"
-			}
-			answer = strings.TrimSpace(input)
-			fmt.Printf("\n")
-			if strings.ToLower(answer) != "y" && strings.ToLower(answer) != "n" && answer != "" {
-				color.Red("\tYou entered %s, please enter y for yes or n for no\n", answer)
-			}
-		}
-		if strings.ToLower(answer) == "y" {
-			err := InstallDefaultRuleSetFromGithub("")
-			if err == nil {
-				fmt.Printf("[i] You will have to restart to use the newly installed rules\n\t")
-				for _, arg := range os.Args {
-					color.Cyan("%s ", arg)
+	/*
+		//* if no rules found, ask if user wants to install default ruleset
+		if !yaraRulesFound && (apiPatterns == nil || len(apiPatterns) == 0) && (malapi == nil || len(malapi) == 0) {
+			color.Red("\n[!] No YARA rules, API patterns or malicious API list was found!")
+			var answer = "empty"
+			for strings.ToLower(answer) != "y" && strings.ToLower(answer) != "n" && answer != "" {
+				fmt.Printf("[*] Would you like to install default ruleset? (y/n) ")
+				reader := bufio.NewReader(os.Stdin)
+				input, err := reader.ReadString('\n')
+				if err != nil {
+					color.Red("\n[!] Failed to read input!\n\tError: %v", err)
+					answer = "n"
 				}
+				answer = strings.TrimSpace(input)
 				fmt.Printf("\n")
-				return
-			} else {
-				color.Red("\n[!] Failed to install default ruleset!\n\tError: %v", err)
+				if strings.ToLower(answer) != "y" && strings.ToLower(answer) != "n" && answer != "" {
+					color.Red("\tYou entered %s, please enter y for yes or n for no\n", answer)
+				}
 			}
-		}
-	}
+			if strings.ToLower(answer) == "y" {
+				err := InstallDefaultRuleSetFromGithub("")
+				if err == nil {
+					fmt.Printf("[i] You will have to restart to use the newly installed rules\n\t")
+					for _, arg := range os.Args {
+						color.Cyan("%s ", arg)
+					}
+					fmt.Printf("\n")
+					return
+				} else {
+					color.Red("\n[!] Failed to install default ruleset!\n\tError: %v", err)
+				}
+			}
+		}*/
 
 	fmt.Printf("[i] Analyzing %s...\n", path)
 	var (
@@ -127,7 +126,13 @@ func main() {
 		isPe = true
 	}
 
-	//TODO: check hash
+	mbAuthKey := os.Getenv("MALWAREBAZAAR_KEY")
+	if mbAuthKey == "" {
+		color.Red("\n[!] Failed to get malwarebazaar API auth key")
+		fmt.Println("\tSet MALWAREBAZAAR_KEY environment variable to your API key")
+		fmt.Println("\tGet one for free at https://auth.abuse.ch/user/me")
+	}
+
 	if yaraRulesFound {
 		yaraResults, err = YaraScanFile(scanner, path)
 		if err != nil {
@@ -155,6 +160,16 @@ func main() {
 			}
 			results = append(results, malimpResults...)
 			total += malScore
+		}
+		if len(malimpResults) > 0 {
+			for _, r := range malimpResults {
+				switch r.Tag {
+				case "Import":
+					importedFuncs = append(importedFuncs, r)
+				case "Pattern":
+					importPatterns = append(importPatterns, r)
+				}
+			}
 		}
 
 		proxyDllResults, proxyScore, err = CheckForProxyDll(path, file)
@@ -186,17 +201,19 @@ func main() {
 	}
 	//* portray results
 	stars := "***************************************************************************"
-	fmt.Printf("\n%s\n\n", stars)
-	//* less important yara rules
-	fmt.Println("\t\t{ YARA-X pattern matches }")
-	for _, match := range yaraResults {
-		match.Print()
-	}
 	fmt.Printf("\n%s\n", stars)
+	if len(yaraResults) > 0 {
+		//* less important yara rules
+		fmt.Println("\t\t{ YARA-X pattern matches }")
+		for _, match := range yaraResults {
+			match.Print()
+		}
+		fmt.Printf("\n%s\n", stars)
+	}
 
 	//* imported funcs
 	if len(importedFuncs) > 0 {
-		fmt.Println("\t\t{ Suspicious imported functions }")
+		fmt.Println("\n\t\t{ Suspicious imported functions }")
 		for _, fn := range importedFuncs {
 			fn.Print()
 		}
@@ -205,7 +222,7 @@ func main() {
 
 	//* api patterns
 	if len(importPatterns) > 0 {
-		fmt.Println("\t\t{ Suspicious function patterns }")
+		fmt.Println("\n\t\t{ Suspicious function patterns }")
 		for _, pattern := range importPatterns {
 			pattern.Print()
 		}
@@ -214,7 +231,7 @@ func main() {
 
 	//* streams
 	if streamScore > 0 {
-		fmt.Println("\t\t{ Alternative data streams }")
+		fmt.Println("\n\t\t{ Alternative data streams }")
 		for _, stream := range streamResults {
 			stream.Print()
 		}
@@ -223,14 +240,26 @@ func main() {
 
 	//* proxy dll
 	if proxyScore > 0 {
-		fmt.Println("\t\t{ Proxy DLL analysis }")
+		fmt.Println("\n\t\t{ Proxy DLL analysis }")
 		for _, result := range proxyDllResults {
 			result.Print()
 		}
 		fmt.Printf("\n%s\n", stars)
 	}
 	//TODO critical yara rules
-	//TODO hash lookup
+	var hl HashLookup
+	if mbAuthKey != "" {
+		hl, err = LookupFileHash(path, mbAuthKey)
+		if err != nil {
+			color.Red("\n[!] Failed to lookup file hash: %v", err)
+		} else {
+			if !hl.IsEmpty() {
+				fmt.Println("\n\t\t{ Hash lookup }")
+				hl.Print()
+				fmt.Printf("\n%s\n", stars)
+			}
+		}
+	}
 
 	//* magic
 	fmt.Printf("\n\tMagic bytes: %s\n", magic)
@@ -284,7 +313,7 @@ func main() {
 		red.Printf("\t[*] ")
 		fmt.Printf("Total score from static analysis of %s:\n", baseName)
 		yellow.Printf("\t\t\t%d", total)
-		color.Red("/100, looks ")
+		red.Printf("/100, looks ")
 		red.Printf("very suspicious!\n")
 	}
 }

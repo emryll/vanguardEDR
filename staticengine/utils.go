@@ -3,6 +3,7 @@ package main
 import (
 	"bufio"
 	"bytes"
+	"crypto/sha256"
 	"fmt"
 	"math"
 	"net/http"
@@ -152,19 +153,54 @@ func (r StaticResult) Print() {
 	case 0:
 		green := color.New(color.FgGreen, color.Bold)
 		green.Printf("[*] ")
-		fmt.Printf("%s ", r.Description) //text in white so its easier to read
-		green.Printf("(+%d)\n", r.Score)
+		if r.Name == "" {
+			fmt.Printf("%s ", r.Description) //text in white so its easier to read
+			green.Printf("(+%d)\n", r.Score)
+		} else {
+			fmt.Printf("%s ", r.Name) //text in white so its easier to read
+			green.Printf("(+%d)\n", r.Score)
+			if r.Description != "" {
+				fmt.Printf("\t[?] %s\n", r.Description)
+			}
+		}
 	case 1:
 		yellow := color.New(color.FgYellow, color.Bold)
 		yellow.Printf("[*] ")
-		fmt.Printf("%s ", r.Description)
-		yellow.Printf("(+%d)\n", r.Score)
+		if r.Name == "" {
+			fmt.Printf("%s ", r.Description)
+			yellow.Printf("(+%d)\n", r.Score)
+		} else {
+			fmt.Printf("%s ", r.Name)
+			yellow.Printf("(+%d)\n", r.Score)
+			if r.Description != "" {
+				fmt.Printf("\t[?] %s\n", r.Description)
+			}
+		}
 	case 2:
 		red := color.New(color.FgRed)
 		red.Printf("[*] ")
-		fmt.Printf("%s ", r.Description)
-		red.Add(color.Bold)
-		red.Printf("(+%d)\n", r.Score)
+		if r.Name == "" {
+			fmt.Printf("%s ", r.Description)
+			red.Add(color.Bold)
+			red.Printf("(+%d)\n", r.Score)
+		} else {
+			fmt.Printf("%s ", r.Name)
+			red.Add(color.Bold)
+			red.Printf("(+%d)\n", r.Score)
+			if r.Description != "" {
+				fmt.Printf("\t[?] %s\n", r.Description)
+			}
+		}
+	}
+	if len(r.Category) > 0 {
+		fmt.Printf("\tCategory: ")
+		for i, t := range r.Category {
+			fmt.Printf("%s", t)
+			if len(r.Category) > i+1 {
+				fmt.Printf(", ")
+			}
+		}
+		fmt.Printf("\n")
 	}
 }
 
@@ -317,4 +353,48 @@ func GetMagic(path string, maxLen int) (string, error) {
 		}
 	}
 	return "Unknown", nil
+}
+
+func ComputeFileSha256(path string) (string, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return "", err
+	}
+	hasher := sha256.New()
+	hasher.Write(data)
+	hash := hasher.Sum(nil)
+	return fmt.Sprintf("%x", hash), nil
+}
+
+func (r HashLookup) Print() {
+	switch r.Status {
+	case "ok":
+		red := color.New(color.FgRed)
+		red.Printf("[*] ")
+		fmt.Println("Hash found in malwarebazaar database!")
+		for _, d := range r.Data {
+			fmt.Printf("\n")
+			fmt.Printf("\tLink: https://bazaar.abuse.ch/sample/%s\n", r.Sha256)
+			if d.Signature != "" && d.Signature != "null" {
+				fmt.Printf("\tSignature: %s\n", d.Signature)
+			}
+			for _, rule := range d.YaraRules {
+				fmt.Println("\n\tYara rule:")
+				fmt.Printf("\t\tName: %s\n", rule.Name)
+				if rule.Description != "" && rule.Description != "null" {
+					fmt.Printf("\t\tDescription: %s\n", rule.Description)
+				}
+			}
+		}
+
+	case "hash_not_found":
+		color.Green("[*] Hash not found in malwarebazaar database")
+	}
+}
+
+func (r HashLookup) IsEmpty() bool {
+	if r.Status != "ok" && r.Status != "hash_not_found" && len(r.Data) == 0 {
+		return true
+	}
+	return false
 }
