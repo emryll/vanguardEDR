@@ -9,7 +9,7 @@ int InitializeYara(YRX_RULES* rules, YRX_SCANNER* scanner, void* user_data) {
     rules = NULL;
     scanner = NULL;
     YRX_COMPILER* compiler;
-    if (yrx_compiler_create(0, &compiler) != SUCCESS) {
+    if (yrx_compiler_create(0, &compiler) != YRX_SUCCESS) {
         printf("Failed to create YARA compiler\n");
         return -1;
     }
@@ -30,7 +30,7 @@ int InitializeYara(YRX_RULES* rules, YRX_SCANNER* scanner, void* user_data) {
             printf("Failed to read %s, it may not exist\n", paths[i]);
             return -3;
         }
-        if (yrx_compiler_add_source(compiler, rule) != SUCCESS) {
+        if (yrx_compiler_add_source(compiler, rule) != YRX_SUCCESS) {
             printf("Failed to add %s to compiler", paths[i]);
             FreePaths(&paths, count);
             free(rule);
@@ -50,14 +50,14 @@ int InitializeYara(YRX_RULES* rules, YRX_SCANNER* scanner, void* user_data) {
     yrx_compiler_destroy(compiler);
 
     //* create scanner
-    if (yrx_scanner_create(rules, &scanner) != SUCCESS) {
+    if (yrx_scanner_create(rules, &scanner) != YRX_SUCCESS) {
         printf("Failed to create scanner\n");
         yrx_rules_destroy(rules);
         return -6;
     }
 
     //* register scanner callback
-    if (yrx_scanner_on_matching_rule(scanner, YaraCallback, user_data) != SUCCESS) {
+    if (yrx_scanner_on_matching_rule(scanner, YaraCallback, user_data) != YRX_SUCCESS) {
         printf("Failed to register scanner callback\n");
         yrx_scanner_destroy(scanner);
         yrx_rules_destroy(rules);
@@ -72,13 +72,13 @@ void UninitializeYara(YRX_RULES* rules, YRX_SCANNER* scanner) {
     yrx_rules_destroy(rules);
 }
 
-//TODO: what to do when a pattern matches?
-    // have some sort of array to store matches (rule id and severity)
+//TODO: upon match you will increment an int representing total score of that process
+//TODO: then you trigger a goroutine to write the full data of match to log file
 void YaraCallback(YRX_RULE* rule, void* data) {
     const uint8_t* identifier;
     size_t len;
 
-    if (yrx_rule_identifier(rule, &ident, &len) == SUCCESS) {
+    if (yrx_rule_identifier(rule, &ident, &len) == YRX_SUCCESS) {
         printf("[i] Matched rule: %.*s\n", (int)len, ident);
     } else {
         printf("[!] Failed to get rule identifier\n");
@@ -104,7 +104,7 @@ int ScanRWXMemory(void* hProcess, YRX_SCANNER* scanner) {
             continue;
         }
         printf("[i] Read %dB of RWX memory at 0x%p\n", bytesRead, rwxRegions[i].address);
-        if (yrx_scanner_scan(scanner, buffer, readBytes) != SUCCESS) {
+        if (yrx_scanner_scan(scanner, buffer, readBytes) != YRX_SUCCESS) {
             printf("[!] Failed to scan buffer\n");
         }
         free(buffer);
@@ -121,7 +121,7 @@ int ScanMainModuleText(HANDLE hProcess, YRX_SCANNER* scanner) {
         return -1;
     }
 
-    if (yrx_scanner_scan(scanner, buffer, size) != SUCCESS) {
+    if (yrx_scanner_scan(scanner, buffer, size) != YRX_SUCCESS) {
         printf("[!] Failed to scan buffer\n");
         free(buffer);
         return -2;
@@ -174,7 +174,7 @@ int MemoryScanEx(unsigned int pid, YRX_SCANNER* scanner) {
                 printf("[!] Failed to read remote process memory at 0x%p\n", modules[i].sections[j].address);
                 continue;
             }
-            if (yrx_scanner_scan(scanner, buffer, readBytes) != SUCCESS) {
+            if (yrx_scanner_scan(scanner, buffer, readBytes) != YRX_SUCCESS) {
                 printf("[!] Failed to scan section %d at 0x%p\n", j, modules[i].sections[j].address);
             }
             free(buffer);
@@ -205,7 +205,7 @@ int ModuleMemoryScan(unsigned int pid, char* moduleName, YRX_SCANNER* scanner) {
             printf("[!] Failed to read remote process memory at 0x%p\n", sections[i].address);
             continue;
         }
-        if (yrx_scanner_scan(scanner, buffer, readBytes) != SUCCESS) {
+        if (yrx_scanner_scan(scanner, buffer, readBytes) != YRX_SUCCESS) {
             printf("[!] Failed to scan section %d at 0x%p\n", i, sections[i].address);
             free(buffer);
         }
