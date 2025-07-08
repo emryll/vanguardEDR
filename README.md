@@ -14,7 +14,17 @@ For the beta version detection comes from the following scans:
 - Basic thread scanning
 - Network behavior
 
+There are also multiple anti-tampering tactics in place:
+- Heartbeat mechanism to insure hook DLL stays in place, to gather telemetry
+- Periodic hash comparisons to detect removal of hooks and other kinds of patching 
+- Self-integrity checks
+
 I'm planning to add some additional scans in the future but these form the core for detections.
 These scans depend on a few types of rules: YARA rules for static and memory scans, API behavior patterns, filesystem behavior patterns and registry behavior patterns. You can use the default rules or add your own by adding files to rules/.
 
 This project is still in very early development and not yet ready for use. I aim to get the core (agent, telemetry DLL and kernel driver) working by end of summer 2025, and full beta working by end of 2025.
+So far what is ready:
+- Static analysis engine (integrated + standalone tool)
+- Pattern detection logic and internal telemetry history cleanup mechanism
+- Most of hook DLL
+- IAT hook detection
