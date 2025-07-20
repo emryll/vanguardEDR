@@ -1,6 +1,9 @@
 package main
 
-import "unsafe"
+import (
+	"bytes"
+	"unsafe"
+)
 
 type Process struct {
 	Path           string
@@ -20,7 +23,8 @@ type Scan struct {
 }
 
 const (
-	MAX_PATH             = 260
+	MAX_PATH             = 260 // MAX_PATH from windows.h
+	DEFAULT_RULE_DIR     = ".\\rules"
 	MEMORYSCAN_INTERVAL  = 45  //sec
 	THREADSCAN_INTERVAL  = 45  //sec
 	HEARTBEAT_INTERVAL   = 30  //sec
@@ -184,12 +188,20 @@ type RemoteModule struct {
 	Sections    []MemRegion
 }
 
+func (m *RemoteModule) GetName() string {
+	i := bytes.IndexByte(m.Name[:], 0)
+	if i == -1 {
+		return string(m.Name[:]) // fallback: use entire buffer
+	}
+	return string(m.Name[:i])
+}
+
 // universal type for portraying results
 type StdResult struct {
 	Name        string   // short name of pattern
 	Description string   // what the pattern match means
-	Tag         string   // to help portray results; for example imports
-	Category    []string // for example evasion; describes what sort of pattern it was
+	Tag         string   // to help portray results; for example "imports"
+	Category    []string // for example "evasion"; describes what sort of pattern it was
 	Score       int      // actual score for how likely its malicious
 	Severity    int      // 0, 1, 2 (low, medium, high); only for colors, doesnt affect anything else
 }
