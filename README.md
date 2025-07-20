@@ -25,6 +25,7 @@ These scans depend on a few types of rules: YARA rules for static and memory sca
 This project is still in very early development and not yet ready for use. I aim to get the core (agent, telemetry DLL and kernel driver) working by end of summer 2025, and full beta working by end of 2025.
 So far what is ready:
 - Static analysis engine (integrated + standalone tool)
+- Memory scanning functionality (utilizing YARA-X)
 - Pattern detection logic and internal telemetry history cleanup mechanism
 - Most of hook DLL
 - IAT hook detection
