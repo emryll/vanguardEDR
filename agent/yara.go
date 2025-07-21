@@ -219,3 +219,38 @@ func MemoryScanEx(pid uint32, scanner *yara.Scanner) ([]StdResult, error) {
 	}
 	return results, nil
 }
+
+func FullMemoryScan(pid uint32, scanner *yara.Scanner) ([]StdResult, error) {
+	fmt.Printf("\n[i] Performing full memory scan on process %d...\n", pid)
+	hProcess, err := windows.OpenProcess(windows.PROCESS_QUERY_INFORMATION|windows.PROCESS_VM_READ, false, pid)
+	if err != nil {
+		return nil, fmt.Errorf("Failed to open process: %v", err)
+	}
+	defer windows.CloseHandle(hProcess)
+
+	var (
+		results    []StdResult
+		numRegions C.size_t
+	)
+	cregions := C.GetAllMemoryRegions(C.HANDLE(unsafe.Pointer(hProcess)), &numRegions)
+	if cregions == nil || numRegions == 0 {
+		return nil, fmt.Errorf("Failed to get memory regions of process: %v", windows.GetLastError())
+	}
+	regions := unsafe.Slice((*MemRegion)(unsafe.Pointer(cregions)), int(numRegions))
+
+	for i, region := range regions {
+		buf, err := ReadRemoteProcessMem(hProcess, uintptr(region.Address), int(region.Size))
+		if err != nil {
+			color.Red("[!] Failed to read memory region at 0x%p: %v", region.Address, err)
+			continue
+		}
+		result, err := scanner.Scan(buf)
+		if err != nil {
+			color.Red("[!] Failed to scan buffer (%dB): %v", len(buf), err)
+			continue
+		}
+		results = append(results, getResultsFromRules(result.MatchingRules())...)
+	}
+	C.free(unsafe.Pointer(cregions))
+	return results, nil
+}

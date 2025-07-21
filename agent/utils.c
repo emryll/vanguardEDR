@@ -1,31 +1,54 @@
 #include <windows.h>
 #include <stdio.h>
+#include <time.h>
 #include "memscan.h"
 
 #define RULES_DIR ".\\rules"
+#define DEFAULT_LOG "agent.log"
+
+FILE* output = stdout;
+
+// open default or specified log file for appending
+FILE* OpenLog(char* path) {
+    if (path == NULL) {
+        return fopen(DEFAULT_LOG, "a");
+    }
+    return fopen(path, "a");
+}
+
+// print formatted text to stdout or log file; where ever output is pointing to
+void Log(const char* format, ...) {
+    time_t now = time(NULL);
+    fprintf(output, "[%ld] ", now);
+
+    va_list args;
+    va_start(args, format);
+    vfprintf(output, format, args);
+    va_end(args);
+}
 
 // read file contents onto buffer. caller is responsible for freeing buffer
 uint8_t* ReadFileEx(char* path, size_t* out_len) {
     HANDLE file = CreateFile(path, GENERIC_READ, 0, NULL, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL);
     if (file == INVALID_HANDLE_VALUE) {
-        fprintf(stderr, "Failed to open file, error: %d\n", GetLastError());
+        printf("Failed to open file, error: %d\n", GetLastError());
         return NULL;
     }
     DWORD size = GetFileSize(file, NULL);
     if (size == INVALID_FILE_SIZE) {
-        fprintf(stderr, "Failed to get file size, error: %d\n", GetLastError());
+        printf("Failed to get file size, error: %d\n", GetLastError());
         CloseHandle(file);
         return NULL;
     }
     uint8_t* content = (uint8_t*)malloc(size+1);
     if (content == NULL) {
-        fprintf(stderr, "Failed to allocate buffer for file\n");
+        printf("Failed to allocate buffer for file\n");
         CloseHandle(file);
         return NULL;
     }
     DWORD bytesRead;
     if (!ReadFile(file, content, size, &bytesRead, NULL) || bytesRead < size) {
-        fprintf(stderr, "Failed to read file, error: %d\n", GetLastError());
+        printf("Failed to read file, error: %d\n", GetLastError());
         CloseHandle(file);
         return NULL;
     }
@@ -132,68 +155,68 @@ uint8_t* GetModuleText(HANDLE hProcess, size_t* size) {
         return NULL;
     }
     // get the handles of all loaded modules
-    //TODO: refactor without the nesting
-    if (EnumProcessModules(hProcess, hModules, bytesNeeded, &bytesNeeded)) {
-        MODULE_INFO modInfo;
-        if (GetModuleInformation(hProcess, hModules[0], &modInfo, sizeof(modInfo))) {
-            free(hModules);
-            LPVOID baseAddress = modInfo.lpBaseOfDll;
-            IMAGE_DOS_HEADER dosHeader;
-            if (!ReadProcessMemory(hProcess, baseAddress, &dosHeader, sizeof(dosHeader), NULL)) {
-                printf("[!] Failed to read DOS header of remote process, error: %d\n", GetLastError());
-                return NULL;
-            }
-
-            LPVOID ntHeaderAddress = baseAddress + dosHeader.e_lfanew;
-            IMAGE_NT_HEADERS ntHeader;
-            if (!ReadProcessMemory(hProcess, ntHeaderAddress, &ntHeader, sizeof(ntHeader), NULL)) {
-                printf("[!] Failed to read NT header of remote process, error: %d\n", GetLastError());
-                return NULL;
-            }
-
-            LPVOID sectionHeadersAddress = ntHeaderAddress + sizeof(DWORD) + sizeof(IMAGE_FILE_HEADER) + ntHeaders.FileHeader.SizeOfOptionalHeader;
-            DWORD numSections = ntHeaders.FileHeader.NumberOfSections;
-            PIMAGE_SECTION_HEADER sectionHeaders = (PIMAGE_SECTION_HEADER)malloc(sizeof(IMAGE_SECTION_HEADER) * numSections);
-            if (sectionHeaders == NULL) {
-                printf("[!] Failed to allocate memory for section headers\n");
-                return NULL;
-            }
-
-            if (!ReadProcessMemory(hProcess, sectionHeadersAddress, sectionHeaders, sizeof(IMAGE_SECTION_HEADER) * numSections, NULL)) {
-                printf("[!] Failed to read sections headers of remote process, error: %d\n", GetLastError());
-                return NULL;
-            }
-
-            LPVOID textAddress;
-            for (DWORD i = 0; i < numSections; i++) {
-                if (strcmp((char*)sectionHeaders[i].Name, ".text") == 0) {
-                    textAddress = (LPVOID)((DWORD_PTR)baseAddress + sectionHeaders[i].VirtualAddress);
-                    *size = sectionHeaders[i].VirtualSize;
-
-                    printf("Text section found!\n\t\\==={ Address: 0x%p\n\t \\=={ Size: %d\n", textAddress, *size);
-                    break;
-                }
-            }
-            free(sectionHeaders);
-
-            uint8_t* buffer = (uint8_t*)malloc(*size);
-            if (buffer == NULL) {
-                printf("[!] Failed to allocate buffer for .text, size: %d\n", size);
-                return NULL;
-            }
-            size_t bytesRead;
-            if (ReadProcessMemory(hProcess, textAddress, buffer, *size, &bytesRead)) {
-                if (bytesRead != *size) {
-                    printf("[!] Bytes read is not equivelant to .text size:\n\t.text size: %dB\n\tbytes read: %dB\n", *size, bytesRead);
-                }
-                return buffer;
-            } else {
-                printf("[!] Failed to read .text(%dB), error: %d\n", size, GetLastError());
-                free(buffer);
-                return NULL;
-            }
-        } else { free(hModules); }
+    if (!EnumProcessModules(hProcess, hModules, bytesNeeded, &bytesNeeded)) {
+        return NULL;
     }
+    MODULE_INFO modInfo;
+    if (GetModuleInformation(hProcess, hModules[0], &modInfo, sizeof(modInfo))) {
+        free(hModules);
+        LPVOID baseAddress = modInfo.lpBaseOfDll;
+        IMAGE_DOS_HEADER dosHeader;
+        if (!ReadProcessMemory(hProcess, baseAddress, &dosHeader, sizeof(dosHeader), NULL)) {
+            printf("[!] Failed to read DOS header of remote process, error: %d\n", GetLastError());
+            return NULL;
+        }
+
+        LPVOID ntHeaderAddress = baseAddress + dosHeader.e_lfanew;
+        IMAGE_NT_HEADERS ntHeader;
+        if (!ReadProcessMemory(hProcess, ntHeaderAddress, &ntHeader, sizeof(ntHeader), NULL)) {
+            printf("[!] Failed to read NT header of remote process, error: %d\n", GetLastError());
+            return NULL;
+        }
+
+        LPVOID sectionHeadersAddress = ntHeaderAddress + sizeof(DWORD) + sizeof(IMAGE_FILE_HEADER) + ntHeaders.FileHeader.SizeOfOptionalHeader;
+        DWORD numSections = ntHeaders.FileHeader.NumberOfSections;
+        PIMAGE_SECTION_HEADER sectionHeaders = (PIMAGE_SECTION_HEADER)malloc(sizeof(IMAGE_SECTION_HEADER) * numSections);
+        if (sectionHeaders == NULL) {
+            printf("[!] Failed to allocate memory for section headers\n");
+            return NULL;
+        }
+
+        if (!ReadProcessMemory(hProcess, sectionHeadersAddress, sectionHeaders, sizeof(IMAGE_SECTION_HEADER) * numSections, NULL)) {
+            printf("[!] Failed to read sections headers of remote process, error: %d\n", GetLastError());
+            return NULL;
+        }
+
+        LPVOID textAddress;
+        for (DWORD i = 0; i < numSections; i++) {
+            if (stricmp((char*)sectionHeaders[i].Name, ".text") == 0) {
+                textAddress = (LPVOID)((DWORD_PTR)baseAddress + sectionHeaders[i].VirtualAddress);
+                *size = sectionHeaders[i].VirtualSize;
+
+                //printf("Text section found!\n\t\\==={ Address: 0x%p\n\t \\=={ Size: %d\n", textAddress, *size);
+                break;
+            }
+        }
+        free(sectionHeaders);
+
+        uint8_t* buffer = (uint8_t*)malloc(*size);
+        if (buffer == NULL) {
+            printf("[!] Failed to allocate buffer for .text, size: %d\n", size);
+            return NULL;
+        }
+        size_t bytesRead;
+        if (ReadProcessMemory(hProcess, textAddress, buffer, *size, &bytesRead)) {
+            if (bytesRead != *size) {
+                printf("[!] Bytes read is not equivelant to .text size:\n\t.text size: %dB\n\tbytes read: %dB\n", *size, bytesRead);
+            }
+            return buffer;
+        } else {
+            printf("[!] Failed to read .text(%dB), error: %d\n", size, GetLastError());
+            free(buffer);
+            return NULL;
+        }
+    } else { free(hModules); }
     return NULL;
 }
 
@@ -224,12 +247,47 @@ MEMORY_REGION* GetRWXMemory(HANDLE hProcess, size_t* numRegions) {
                 return NULL;
             }
 
-            regions[regionsCount].address = lpBaseAddress;
+            regions[regionsCount].address = mbi.BaseAddress;
             regions[regionsCount].size = mbi.RegionSize;
             (*numRegions)++;
         }
 
         lpBaseAddress = (LPBYTE)lpBaseAddress + mbi.RegionSize;
+    }
+    return regions;
+}
+
+// gets all commited memory regions of remote process
+MEMORY_REGION* GetAllMemoryRegions(HANDLE hProcess, size_t* numRegions) {
+    SYSTEM_INFO sysInfo;
+    MEMORY_BASIC_INFORMATION mbi;
+    LPVOID lpBaseAddress = NULL;
+    MEMORY_REGION* regions = NULL;
+    *numRegions = 0;
+    size_t bytesRead;
+
+    // Get system info to determine the valid address range
+    GetSystemInfo(&sysInfo);
+
+    while (lpBaseAddress < sysInfo.lpMaximumApplicationAddress) {
+        if (VirtualQueryEx(hProcess, lpBaseAddress, &mbi, sizeof(mbi)) == 0) {
+            lpBaseAddress = (LPBYTE)lpBaseAddress + sysInfo.dwPageSize;
+            continue;
+        }
+        //if (mbi.State == MEM_COMMIT && mbi.Protect & PAGE_READONLY && !(mbi.Protect & PAGE_GUARD) && !(mbi.Protect & PAGE_NOACCESS) && (mbi.Type == MEM_PRIVATE || mbi.Type == MEM_IMAGE || mbi.Type == MEM_MAPPED)) {
+        if (mbi.State == MEM_COMMIT && !(mbi.Protect & PAGE_GUARD) && !(mbi.Protect & PAGE_NOACCESS)) {
+            // Reallocate the array to store a new region
+            regions = (MEMORY_REGION*)realloc(regions, (*numRegions + 1) * sizeof(MEMORY_REGION));
+            if (regions == NULL) {
+                printf("Failed to realloc memory for regions array.\n");
+                return NULL;
+            }
+
+            regions[*numRegions].address = mbi.BaseAddress;
+            regions[*numRegions].size = mbi.RegionSize;
+            (*numRegions)++;
+        }
+        lpBaseAddress = (LPBYTE)mbi.BaseAddress + mbi.RegionSize;
     }
     return regions;
 }
@@ -385,7 +443,7 @@ MEMORY_REGION* GetAllSectionsOfModule(HANDLE hProcess, char* moduleName, size_t*
         }
 
         // check if its right one
-        if (stricmp(moduleName, baseName, strlen(moduleName)) != 0) {
+        if (strlen(moduleName) != strlen(baseName) || stricmp(moduleName, baseName, strlen(moduleName)) != 0) {
             continue;
         }
         printf("[i] Found %s\n", baseName);
@@ -456,4 +514,17 @@ void FreeRemoteModuleArray(REMOTE_MODULE* modules, size_t numModules) {
         free(modules[i].sections);
     }
     free(modules);
+}
+
+int NotifyMatchAndRequestScan(char* programName, DWORD pid, YRX_SCANNER* scanner) {
+    char text[520];
+    sprintf("%s(%d) is suspicious and may be malware, would you like to run a full scan in the background? It may affect performance.", programName, pid);
+    int answer = MessageBox(NULL, text, "Alert!", MB_YESNO | MB_ICONWARNING | MB_SYSTEMODAL);
+    if answer == 0 {
+        printf("\n[!] Failed to display message box, error: %d\n", GetLastError());
+    } else if (answer == IDYES) {
+        MemoryScanEx(pid, scanner);
+        //TODO: check api, file and reg patterns
+        //TODO: check hook and self integrity
+    }
 }
