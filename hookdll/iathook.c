@@ -16,12 +16,13 @@ typedef struct {
     unsigned char* textHash;
 } Module;
 
+//TODO: read from a config file
 HookEntry HookList[] = {
     { "MessageBoxA", "user32.dll", NULL, NULL, NULL, MessageBoxA_HookHandler },
-//    { "VirtualProtect", "kernelbase.dll", NULL, NULL, NULL, VirtualProtect_HookHandler },
-//    { "VirtualAlloc", "kernel32.dll", NULL, NULL, NULL, VirtualAlloc_HookHandler },
-//    { "CreateProcessA", "kernel32.dll", NULL, NULL, NULL, CreateProcessA_HookHandler },
-//    { "CreateProcessW", "kernel32.dll", NULL, NULL, NULL, CreateProcessW_HookHandler },
+    { "VirtualProtect", "kernelbase.dll", NULL, NULL, NULL, VirtualProtect_HookHandler },
+    { "VirtualAlloc", "kernel32.dll", NULL, NULL, NULL, VirtualAlloc_HookHandler },
+    { "CreateProcessA", "kernel32.dll", NULL, NULL, NULL, CreateProcessA_HookHandler },
+    { "CreateProcessW", "kernel32.dll", NULL, NULL, NULL, CreateProcessW_HookHandler },
 };
 
 Module TrackedModules[] = {
@@ -48,21 +49,18 @@ int InitializeHookList() {
         }
         HookList[i].originalFunc = GetProcAddress(HookList[i].moduleBase, HookList[i].funcName);
         
-        //TODO: make func hash function
-        getFuncHash((LPVOID)HookList[i].originalFunc, FN_HASH_LENGTH, HookList[i].funcHash);
+        //TODO: test this func hash function
+        FillFunctionHashes(FUNC_HASH_LENGTH);
     }
 }
 
-// 
 int InitializeIatHookByName(LPVOID moduleBase, LPCSTR funcToHook, FARPROC handler) {
     PIMAGE_DOS_HEADER dosHeaders = (PIMAGE_DOS_HEADER)moduleBase;
     PIMAGE_NT_HEADERS ntHeaders = (PIMAGE_NT_HEADERS)((ULONG_PTR)moduleBase + dosHeaders->e_lfanew);
     if (ntHeaders->Signature != PE_SIGNATURE) {
-        //setColor(RED);
-        //printf("\n[!] Incorrect PE signature!\n");
-        //setColor(WHITE);
         return -1;
     }
+
 	PIMAGE_IMPORT_DESCRIPTOR importDescriptor = NULL;
 	IMAGE_DATA_DIRECTORY importsDirectory = ntHeaders->OptionalHeader.DataDirectory[IMAGE_DIRECTORY_ENTRY_IMPORT];
 	importDescriptor = (PIMAGE_IMPORT_DESCRIPTOR)(importsDirectory.VirtualAddress + (DWORD_PTR)moduleBase);
@@ -80,19 +78,17 @@ int InitializeIatHookByName(LPVOID moduleBase, LPCSTR funcToHook, FARPROC handle
         firstThunk = (PIMAGE_THUNK_DATA)((DWORD_PTR)moduleBase + importDescriptor->FirstThunk);
         
         while (originalFirstThunk->u1.AddressOfData != 0) {
-            if (originalFirstThunk == NULL || firstThunk == NULL) {
-                //printf("[!] NULL pointer\n");
-            }
-            
+            //? do you need to check if originalFirstThunk or firstThunk is NULL?
             functionName = (PIMAGE_IMPORT_BY_NAME)((DWORD_PTR)moduleBase + originalFirstThunk->u1.AddressOfData);
 
+            // skip null function entry
             if (firstThunk->u1.Function == 0) {
-                //printf("[i] Skipping null function entry\n");
                 originalFirstThunk++;
                 firstThunk++;
                 continue;
             }
            
+            // replace address if its the one we want to hook
             if (strcmp(functionName->Name, funcToHook) == 0) {
                 DWORD oldProtect;
                 VirtualProtect((LPVOID)(&firstThunk->u1.Function), 8, PAGE_READWRITE, &oldProtect);
@@ -111,10 +107,13 @@ int InitializeIatHookByName(LPVOID moduleBase, LPCSTR funcToHook, FARPROC handle
 int InitializeIatHooksByHookList() {
     int failed = 0;
     for (size_t i = 0; i < HookListSize; i++) {
-        int result = InitializeIatHookByName(HookList[i].moduleBase, HookList[i].funcName, HookList[i].handler);
+        //? the iat is in main module, because youre going through modules imported by main module!
+        int result = InitializeIatHookByName((LPVOID)GetModuleHandle(NULL), HookList[i].funcName, HookList[i].handler);
         if (result != 0) {
             failed++;
         }
     }
     return failed;
 }
+
+//TODO: uninstall iat hooks
