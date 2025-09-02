@@ -1,5 +1,8 @@
 package main
 
+//#include "memscan.h"
+import "C"
+
 import (
 	"bytes"
 	"encoding/binary"
@@ -76,7 +79,7 @@ func GetProcessExecutable(pid uint32) (string, error) {
 }
 
 // remove all items in history which are older than timestamp threshold
-func Cleanup[T History](history []T, threshold int64) []T {
+func Cleanup[T any, H History[T]](history []H, threshold int64) []H {
 	// sort history in ascending order
 	sort.Slice(history, func(i, j int) bool {
 		return history[i].GetTime() < history[j].GetTime()
@@ -87,7 +90,7 @@ func Cleanup[T History](history []T, threshold int64) []T {
 }
 
 // find last item <= threshold
-func binarySearchBelow[T History](history []T, threshold int64) int {
+func binarySearchBelow[T any, H History[T]](history []H, threshold int64) int {
 	left, right := 0, len(history)-1
 	for left <= right {
 		mid := left + (right-left)/2
@@ -100,36 +103,52 @@ func binarySearchBelow[T History](history []T, threshold int64) int {
 	return right + 1
 }
 
-// moves most recent to history and replaces most recent with specified item
-func PushMostRecent[T History](current *T, new T) {
+//TODO
+/*// moves most recent to history and replaces most recent with specified item
+func PushMostRecent[T any, H History[T]](current *H, new H) {
 	old := *current
 	old.HistoryPtr() = nil
 
 	new.HistoryPtr() = append(*current.HistoryPtr(), old)
-}
+}*/
 
 // translate the telemetry c struct with unions to golang struct, which std go methods fail to do
 func ParseApiTelemetryPacket(rawData []byte) ApiCallData {
 	var apiCall ApiCallData
 	apiCall.ThreadId = binary.LittleEndian.Uint32(rawData[0:4])
-	apiCall.DllName = ReadAnsiStringValue(rawData[4 : 64+4])
-	apiCall.FuncId = binary.LittleEndian.Uint32(rawData[68 : 68+4])
+	apiCall.DllName = ReadAnsiStringValue(rawData[4 : 4+60])
+	//apiCall.FuncId = binary.LittleEndian.Uint32(rawData[68 : 68+4])
+	apiCall.FuncName = ReadAnsiStringValue(rawData[64 : 64+60])
 
-	counter := 72
+	//counter := 72
+	counter := 64 + 60 + 4
+ArgLoop:
 	for i := 0; i < MAX_API_ARGS; i++ {
-		apiCall.Args = append(apiCall.Args, ApiArg{Type: binary.LittleEndian.Uint32(rawData[counter : counter+4])})
-		counter += 8 // 4 byte padding after 4 byte enum
+		/*fmt.Printf("arg %d raw data (counter: %d)\n", i, counter)
+		for j, b := range rawData[counter : counter+528] {
+			if j%20 == 0 {
+				fmt.Printf("\n")
+			}
+			fmt.Printf("%02X ", b)
+		}*/
+		apiCall.Args = append(apiCall.Args, ApiArg{Type: int(binary.LittleEndian.Uint32(rawData[counter : counter+8]))})
+		counter += 8 // 4 byte padding after 4 byte enum (API_ARGTYPE)
+		fmt.Printf("arg type: %d\n", apiCall.Args[i].Type)
+		//counter += 4 // padding comes before
 		switch apiCall.Args[i].Type {
+		//? using copy because of [520]byte vs []byte type mismatch
+		case API_ARG_TYPE_EMPTY:
+			break ArgLoop
 		case API_ARG_TYPE_DWORD:
-			apiCall.Args[i].RawData = rawData[counter : counter+4]
+			copy(apiCall.Args[i].RawData[:], rawData[counter:counter+4])
 		case API_ARG_TYPE_ASTRING:
-			apiCall.Args[i].RawData = rawData[counter : counter+260]
+			copy(apiCall.Args[i].RawData[:], rawData[counter:counter+260])
 		case API_ARG_TYPE_WSTRING:
-			apiCall.Args[i].RawData = rawData[counter : counter+520]
+			copy(apiCall.Args[i].RawData[:], rawData[counter:counter+520])
 		case API_ARG_TYPE_BOOL:
-			apiCall.Args[i].RawData = rawData[counter : counter+4] // BOOL is uint32
+			copy(apiCall.Args[i].RawData[:], rawData[counter:counter+4]) // BOOL is uint32
 		case API_ARG_TYPE_PTR:
-			apiCall.Args[i].RawData = rawData[counter : counter+8]
+			copy(apiCall.Args[i].RawData[:], rawData[counter:counter+8])
 		}
 		counter += 520 // largest union member is wchar_t[260] which is 520 bytes
 	}
@@ -178,24 +197,24 @@ func ReadBoolValue(rawData []byte) bool {
 }
 
 // TODO: test this
-func ParseFileTelemetryPacket(data []byte) FILE_EVENT {
-	var fileEvent FILE_EVENT
+func ParseFileTelemetryPacket(data []byte) FileEventData {
+	var fileEvent FileEventData
 	fileEvent.Path = ReadAnsiStringValue(data[0:260])
 	fileEvent.Action = ReadDWORDValue(data[260:264])
 	return fileEvent
 }
 
 // TODO: test this
-func ParseRegTelemetryPacket(data []byte) REG_EVENT {
-	var regEvent REG_EVENT
+func ParseRegTelemetryPacket(data []byte) RegEventData {
+	var regEvent RegEventData
 	regEvent.Path = ReadAnsiStringValue(data[0:260])
 	regEvent.Value = ReadAnsiStringValue(data[260 : 260+260])
 	return regEvent
 }
 
 // TODO: test this
-func ParseTextTelemetryPacket(data []byte) TEXT_CHECK {
-	var textCheck TEXT_CHECK
+func ParseTextTelemetryPacket(data []byte) TextCheckData {
+	var textCheck TextCheckData
 	textCheck.Result = ReadBoolValue(data[0:4])
 	textCheck.Module = ReadAnsiStringValue(data[4 : 4+260])
 	return textCheck

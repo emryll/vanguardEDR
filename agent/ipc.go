@@ -1,12 +1,17 @@
 package main
 
+//#include "memscan.h"
+import "C"
+
 import (
 	"bytes"
 	"encoding/binary"
 	"fmt"
+	"io"
 	"net"
 	"sync"
 	"time"
+	"unsafe"
 
 	winio "github.com/Microsoft/go-winio"
 	"github.com/fatih/color"
@@ -59,7 +64,8 @@ func heartbeatHandler(conn net.Conn, wg *sync.WaitGroup, terminate chan struct{}
 			var hb Heartbeat
 			err := binary.Read(conn, binary.LittleEndian, &hb)
 			if err != nil {
-				color.Red("\n[!] Read error: %v", err)
+				color.Red("\n[heartbeat] Read error: %v", err)
+				//continue
 				return
 			}
 
@@ -77,17 +83,11 @@ func heartbeatHandler(conn net.Conn, wg *sync.WaitGroup, terminate chan struct{}
 				path, err := GetProcessExecutable(hb.Pid)
 				if err != nil {
 					TerminateProcess(int(hb.Pid))
-					mu.Lock()
-					delete(processes, int(hb.Pid))
-					mu.Unlock()
 					continue
 				}
 				result, err := IsSignatureValid(path)
 				if err != nil {
 					TerminateProcess(int(hb.Pid))
-					mu.Lock()
-					delete(processes, int(hb.Pid))
-					mu.Unlock()
 					continue
 				}
 				var isSigned bool
@@ -156,10 +156,12 @@ func telemetryHandler(conn net.Conn, wg *sync.WaitGroup, terminate chan struct{}
 			return
 		default:
 			var tm Telemetry
-			err := binary.Read(conn, binary.LittleEndian, &tm)
+			//err := binary.Read(conn, binary.LittleEndian, &tm)
+			buf := make([]byte, TM_HEADER_SIZE+TM_MAX_DATA_SIZE)
+			_, err := io.ReadFull(conn, buf)
 			if err != nil {
-				color.Red("\n[!] Failed to read telemetry pipe: %v", err)
-				if err.Error() == "EOF" {
+				//color.Red("\n[!] Failed to read telemetry pipe: %v", err)
+				/*if err.Error() == "EOF" {
 					time.Sleep(time.Duration(1) * time.Second)
 
 					err = binary.Read(conn, binary.LittleEndian, &tm)
@@ -172,18 +174,59 @@ func telemetryHandler(conn net.Conn, wg *sync.WaitGroup, terminate chan struct{}
 							continue
 						}
 					}
-				}
+				}*/
 				continue
 			}
+			err = binary.Read(bytes.NewReader(buf), binary.LittleEndian, &tm)
+			if err != nil {
+				fmt.Printf("[!] binary.Read failed on buffer: %v", err)
+				continue
+			}
+			/*if n == 0 {
+				continue
+			}*/
+			if tm.Header.Type == TM_TYPE_EMPTY_VALUE {
+				continue
+			}
+			fmt.Printf("pid: %d\ntype: %d\nTimestamp: %d\n", tm.Header.Pid, tm.Header.Type, tm.Header.TimeStamp)
+
 			switch tm.Header.Type {
 			case TM_TYPE_API_CALL:
-				var apiCall ApiCallData
-				buf := bytes.NewReader(tm.RawData[:])
-				err := binary.Read(buf, binary.LittleEndian, &apiCall)
-				if err != nil {
-					color.Red("\n[!] Failed to decode ApiCallData: %v", err)
-					continue
+				//TODO: log
+				apiCall := ParseApiTelemetryPacket(tm.RawData[:])
+				// add to process api call history
+				//TODO: check if it exists and push to func history
+				processes[int(tm.Header.Pid)].APICalls[apiCall.FuncName] = apiCall
+
+				fmt.Println("[*] New API telemetry packet")
+				/*for i, b := range tm.RawData {
+					if i%20 == 0 {
+						fmt.Printf("\n")
+					}
+					fmt.Printf("%02X ", b)
+				}*/
+				fmt.Printf("\n\tTid: 0x%X\n\tFunction: %s!%s\n", apiCall.ThreadId, apiCall.DllName, apiCall.FuncName)
+				//fmt.Println(apiCall.Args)
+				for i, arg := range apiCall.Args {
+					switch arg.Type {
+					case API_ARG_TYPE_DWORD:
+						fmt.Printf("\tArg #%d (DWORD): %d\n", i, ReadDWORDValue(arg.RawData[:]))
+					case API_ARG_TYPE_ASTRING:
+						fmt.Printf("\tArg #%d (ASTRING): %s\n", i, ReadAnsiStringValue(arg.RawData[:]))
+					case API_ARG_TYPE_WSTRING:
+						fmt.Printf("\tArg #%d (WSTRING): %s\n", i, ReadWideStringValue(arg.RawData[:]))
+					case API_ARG_TYPE_BOOL:
+						bval := ReadBoolValue(arg.RawData[:])
+						if bval {
+							fmt.Printf("\tArg #%d (BOOL): TRUE\n", i)
+						} else {
+							fmt.Printf("\tArg #%d (BOOL): FALSE\n", i)
+						}
+					case API_ARG_TYPE_PTR:
+						fmt.Printf("\tArg #%d (LPVOID): 0x%X\n", i, ReadPointerValue(arg.RawData[:]))
+					}
 				}
+				fmt.Printf("size of packet: %d\n", unsafe.Sizeof(tm))
 				//TODO: add to api call history
 
 			case TM_TYPE_TEXT_INTEGRITY:
@@ -194,19 +237,22 @@ func telemetryHandler(conn net.Conn, wg *sync.WaitGroup, terminate chan struct{}
 					color.Red("\n[!] Failed to decode TextCheckData: %v", err)
 					continue
 				}
-				if textCheck.Result == 1 {
+				if textCheck.Result {
 					color.Green("[telemetry] .text integrity check of process %d: TRUE", tm.Header.Pid)
-				}
-				if textCheck.Result == 0 {
+					//TODO: log
+				} else {
+					//TODO: log
 					color.Red("[telemetry] .text integrity check of process %d: FALSE", tm.Header.Pid)
-					//TODO: launch extensive memory scan
-					C.MemoryScanEx(tm.Header.Pid, scanner)
+					MemoryScanEx(tm.Header.Pid, scanner)
+					//TODO: callback should add matches to some data structure,
+					//TODO: maybe here trigger a check of it
 				}
 			}
 		}
 	}
 }
 
+/*
 func commandListener(wg *sync.WaitGroup) error {
 	wg.Done()
 	l, err := winio.ListenPipe(COMMANDS_PIPE, nil)
@@ -245,3 +291,4 @@ func commandHandler(conn net.Conn, commands chan Command, wg *sync.WaitGroup) {
 		}
 	}
 }
+*/

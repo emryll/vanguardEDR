@@ -6,14 +6,17 @@ import (
 )
 
 type Process struct {
-	Path           string
-	LastHeartbeat  int64
-	IsSigned       bool
-	APICalls       map[string]ApiCallData   // key: api call name
-	FileEvents     map[string]FileEventData // key: filepath
-	RegEvents      map[string]RegEventData  // key: name of reg key
-	PatternMatches map[string]PatternResult
-	TotalScore     int
+	Path     string
+	IsSigned bool
+	// this is collected telemetry data history
+	APICalls   map[string]ApiCallData   // key: api call name
+	FileEvents map[string]FileEventData // key: filepath
+	RegEvents  map[string]RegEventData  // key: name of reg key
+	// this is the matched patterns that make up the total score
+	PatternMatches map[string]StdResult // key: name of pattern
+	//TODO: seperate score and results for static analysis?
+	LastHeartbeat int64
+	TotalScore    int
 }
 
 type Scan struct {
@@ -23,33 +26,37 @@ type Scan struct {
 }
 
 const (
-	MAX_PATH             = 260 // MAX_PATH from windows.h
-	DEFAULT_RULE_DIR     = ".\\rules"
-	MEMORYSCAN_INTERVAL  = 45  //sec
-	THREADSCAN_INTERVAL  = 45  //sec
-	HEARTBEAT_INTERVAL   = 30  //sec
-	NETWORKSCAN_INTERVAL = 180 //sec, 3min
-	MAX_HEARTBEAT_DELAY  = HEARTBEAT_INTERVAL * 2
+	MAX_PATH                    = 260 // MAX_PATH from windows.h
+	DEFAULT_RULE_DIR            = ".\\rules"
+	MEMORYSCAN_INTERVAL         = 45  //sec
+	THREADSCAN_INTERVAL         = 45  //sec
+	HEARTBEAT_INTERVAL          = 30  //sec
+	NETWORKSCAN_INTERVAL        = 180 //sec, 3min
+	MAX_HEARTBEAT_DELAY         = HEARTBEAT_INTERVAL * 2
+	TM_HISTORY_CLEANUP_INTERVAL = 30 //sec
 
 	SCAN_MEMORYSCAN    = 0 // scan RWX mem and .text of main module
 	SCAN_MEMORYSCAN_EX = 1 // scan all sections of all modules
 	SCAN_MEMORY_MODULE = 2 // fully scan specific module
 
-	TM_TYPE_API_CALL            = 0
-	TM_TYPE_FILE_EVENT          = 1
-	TM_TYPE_REG_EVENT           = 2
-	TM_TYPE_TEXT_INTEGRITY      = 3
-	TM_HISTORY_CLEANUP_INTERVAL = 30 //sec
+	TM_TYPE_EMPTY_VALUE    = 0
+	TM_TYPE_API_CALL       = 1
+	TM_TYPE_FILE_EVENT     = 2
+	TM_TYPE_REG_EVENT      = 3
+	TM_TYPE_TEXT_INTEGRITY = 4
+	TM_TYPE_HOOK_INTEGRITY = 5
 
-	API_ARG_TYPE_DWORD   = 0
-	API_ARG_TYPE_ASTRING = 1
-	API_ARG_TYPE_WSTRING = 2
-	API_ARG_TYPE_BOOL    = 3
-	API_ARG_TYPE_PTR     = 4
+	API_ARG_TYPE_EMPTY   = 0
+	API_ARG_TYPE_DWORD   = 1
+	API_ARG_TYPE_ASTRING = 2
+	API_ARG_TYPE_WSTRING = 3
+	API_ARG_TYPE_BOOL    = 4
+	API_ARG_TYPE_PTR     = 5
 
 	MAX_API_ARGS     = 10
 	API_ARG_MAX_SIZE = 520
-	TM_MAX_DATA_SIZE = 520
+	TM_HEADER_SIZE   = 16
+	TM_MAX_DATA_SIZE = 67624 - TM_HEADER_SIZE
 
 	IS_UNSIGNED   = 0
 	HAS_SIGNATURE = 1
@@ -94,7 +101,7 @@ type History[T any] interface {
 type ApiCallData struct {
 	ThreadId  uint32
 	DllName   string
-	FuncId    int
+	FuncName  string
 	TimeStamp int64
 	Args      []ApiArg      // important ones max 3
 	History   []ApiCallData // sorted by timestamp
@@ -109,10 +116,14 @@ func (a ApiCallData) HistoryPtr() *[]ApiCallData {
 }
 
 type TextCheckData struct {
-	Result
+	Result    bool
+	Module    string
+	TimeStamp int64
 }
 
 type FileEventData struct {
+	Path      string
+	Action    uint32
 	TimeStamp int64
 	History   []FileEventData
 }
@@ -122,7 +133,11 @@ func (f FileEventData) GetTime() int64 {
 }
 
 type RegEventData struct {
+	Path      string
+	Action    uint32
+	Value     string
 	TimeStamp int64
+	History   []RegEventData
 }
 
 func (r RegEventData) GetTime() int64 {
@@ -161,7 +176,7 @@ type RegPattern struct {
 
 type Result struct {
 	TotalScore int
-	Results    []PatternResult
+	Results    []StdResult
 }
 
 // TODO change name to id
@@ -191,7 +206,7 @@ type RemoteModule struct {
 func (m *RemoteModule) GetName() string {
 	i := bytes.IndexByte(m.Name[:], 0)
 	if i == -1 {
-		return string(m.Name[:]) // fallback: use entire buffer
+		return string(m.Name[:]) // fallback
 	}
 	return string(m.Name[:i])
 }
