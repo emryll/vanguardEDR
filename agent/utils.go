@@ -103,38 +103,30 @@ func binarySearchBelow[T any, H History[T]](history []H, threshold int64) int {
 	return right + 1
 }
 
-//TODO
-/*// moves most recent to history and replaces most recent with specified item
-func PushMostRecent[T any, H History[T]](current *H, new H) {
-	old := *current
-	old.HistoryPtr() = nil
-
-	new.HistoryPtr() = append(*current.HistoryPtr(), old)
-}*/
-
-// translate the telemetry c struct with unions to golang struct, which std go methods fail to do
+// ? In C, an union's memory footprint will be the size of the largest member, also, compilers
+// ? will usually add padding to reach address divisible by 8(?). For example 4B after DWORD(32bits)
+// Translate the telemetry C struct with unions to a golang struct, which std go methods fail to do
 func ParseApiTelemetryPacket(rawData []byte) ApiCallData {
 	var apiCall ApiCallData
 	apiCall.ThreadId = binary.LittleEndian.Uint32(rawData[0:4])
 	apiCall.DllName = ReadAnsiStringValue(rawData[4 : 4+60])
-	//apiCall.FuncId = binary.LittleEndian.Uint32(rawData[68 : 68+4])
 	apiCall.FuncName = ReadAnsiStringValue(rawData[64 : 64+60])
+	apiCall.ArgCount = binary.LittleEndian.Uint32(rawData[64+60 : 64+60+4])
+	argCount := 0
+	if apiCall.ArgCount > 0 && apiCall.ArgCount <= MAX_API_ARGS {
+		argCount = int(apiCall.ArgCount)
+	} else {
+		argCount = MAX_API_ARGS
+	}
 
-	//counter := 72
+	// manual analysis of telemetry packet showed a 4 byte padding before first arg (align with 8)
 	counter := 64 + 60 + 4
 ArgLoop:
-	for i := 0; i < MAX_API_ARGS; i++ {
-		/*fmt.Printf("arg %d raw data (counter: %d)\n", i, counter)
-		for j, b := range rawData[counter : counter+528] {
-			if j%20 == 0 {
-				fmt.Printf("\n")
-			}
-			fmt.Printf("%02X ", b)
-		}*/
+	for i := 0; i < argCount; i++ {
+		// get the arg type which is first part of arg struct
 		apiCall.Args = append(apiCall.Args, ApiArg{Type: int(binary.LittleEndian.Uint32(rawData[counter : counter+8]))})
 		counter += 8 // 4 byte padding after 4 byte enum (API_ARGTYPE)
 		fmt.Printf("arg type: %d\n", apiCall.Args[i].Type)
-		//counter += 4 // padding comes before
 		switch apiCall.Args[i].Type {
 		//? using copy because of [520]byte vs []byte type mismatch
 		case API_ARG_TYPE_EMPTY:
@@ -349,4 +341,47 @@ func ConvertRemoteModules(cMods *C.REMOTE_MODULE, count C.size_t) ([]RemoteModul
 	}
 
 	return modules, nil
+}
+
+// this method will make new the main one and push current one to api.History
+func (api *ApiCallData) PushNewEntry(new ApiCallData) {
+	//* clear the history to avoid recursive duplication of history
+	old := *api
+	old.History = nil
+	//* append to history copy of current one
+	api.History = append(api.History, old)
+	//* change timestamp and tid of current one to values of new one
+	api.TimeStamp = new.TimeStamp
+	api.ThreadId = new.ThreadId
+}
+
+// this method will add api to process' api call history, or update the entry if it exists
+func (p *Process) PushToApiCallHistory(api ApiCallData) {
+	call, exists := p.APICalls[api.FuncName]
+	if exists {
+		// this is a copy of the value
+		call.PushNewEntry(api)
+		p.APICalls[api.FuncName] = call
+	} else {
+		p.APICalls[api.FuncName] = api
+	}
+}
+
+// ! this is kind of useless because you still need to type assert so you need A SECOND SWITCH
+// ?^ you could maybe do it with a generic T method but I kept getting syntax error trying it
+// generic function to interpret c arg from raw bytes.
+func (arg ApiArg) Read() any {
+	switch arg.Type {
+	case API_ARG_TYPE_DWORD:
+		return ReadDWORDValue(arg.RawData[:])
+	case API_ARG_TYPE_ASTRING:
+		return ReadAnsiStringValue(arg.RawData[:])
+	case API_ARG_TYPE_WSTRING:
+		return ReadWideStringValue(arg.RawData[:])
+	case API_ARG_TYPE_BOOL:
+		return ReadBoolValue(arg.RawData[:])
+	case API_ARG_TYPE_PTR:
+		return ReadPointerValue(arg.RawData[:])
+	}
+	return nil
 }

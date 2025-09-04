@@ -11,7 +11,6 @@ import (
 	"net"
 	"sync"
 	"time"
-	"unsafe"
 
 	winio "github.com/Microsoft/go-winio"
 	"github.com/fatih/color"
@@ -104,7 +103,7 @@ func heartbeatHandler(conn net.Conn, wg *sync.WaitGroup, terminate chan struct{}
 					continue
 				}
 				mu.Lock()
-				processes[int(hb.Pid)] = Process{Path: path,
+				processes[int(hb.Pid)] = &Process{Path: path,
 					LastHeartbeat: time.Now().Unix(),
 					IsSigned:      isSigned,
 					APICalls:      make(map[string]ApiCallData),
@@ -155,68 +154,57 @@ func telemetryHandler(conn net.Conn, wg *sync.WaitGroup, terminate chan struct{}
 		case <-terminate:
 			return
 		default:
-			var tm Telemetry
+			//* first read the header to get size and type of data
+			var tmHeader TelemetryHeader
 			//err := binary.Read(conn, binary.LittleEndian, &tm)
-			buf := make([]byte, TM_HEADER_SIZE+TM_MAX_DATA_SIZE)
-			_, err := io.ReadFull(conn, buf)
+			tmhBuf := make([]byte, TM_HEADER_SIZE)
+			_, err := io.ReadFull(conn, tmhBuf)
 			if err != nil {
-				//color.Red("\n[!] Failed to read telemetry pipe: %v", err)
-				/*if err.Error() == "EOF" {
-					time.Sleep(time.Duration(1) * time.Second)
-
-					err = binary.Read(conn, binary.LittleEndian, &tm)
-					if err != nil {
-						if err.Error() == "EOF" {
-							fmt.Println("[i] Encountered EOF again, shutting connection...")
-							return
-						} else {
-							color.Red("\n[!] Failed to read telemetry pipe: %v", err)
-							continue
-						}
-					}
-				}*/
+				color.Red("[telemetry] Failed to read telemetry header: %v", err)
 				continue
 			}
-			err = binary.Read(bytes.NewReader(buf), binary.LittleEndian, &tm)
+			err = binary.Read(bytes.NewReader(tmhBuf), binary.LittleEndian, &tmHeader)
 			if err != nil {
-				fmt.Printf("[!] binary.Read failed on buffer: %v", err)
+				color.Red("[telemetry] binary.Read failed on buffer: %v", err)
 				continue
 			}
 			/*if n == 0 {
 				continue
 			}*/
-			if tm.Header.Type == TM_TYPE_EMPTY_VALUE {
+			if tmHeader.Type == TM_TYPE_EMPTY_VALUE {
 				continue
 			}
-			fmt.Printf("pid: %d\ntype: %d\nTimestamp: %d\n", tm.Header.Pid, tm.Header.Type, tm.Header.TimeStamp)
+			fmt.Printf("pid: %d\ntype: %d\nTimestamp: %d\ndataSize: %d\n", tmHeader.Pid, tmHeader.Type, tmHeader.TimeStamp, tmHeader.DataSize)
 
-			switch tm.Header.Type {
+			//* now read the actual data which comes after the header
+			dataBuf := make([]byte, tmHeader.DataSize)
+			_, err = io.ReadFull(conn, dataBuf)
+			if err != nil {
+				color.Red("[telemetry] Failed to read data of telemetry packet: %v", err)
+				continue
+			}
+
+			switch tmHeader.Type {
 			case TM_TYPE_API_CALL:
 				//TODO: log
-				apiCall := ParseApiTelemetryPacket(tm.RawData[:])
-				// add to process api call history
-				//TODO: check if it exists and push to func history
-				processes[int(tm.Header.Pid)].APICalls[apiCall.FuncName] = apiCall
+				//* parse packet and add to process' api call history
+				apiCall := ParseApiTelemetryPacket(dataBuf)
+				apiCall.TimeStamp = tmHeader.TimeStamp
+				processes[int(tmHeader.Pid)].PushToApiCallHistory(apiCall)
 
+				//* debug prints
 				fmt.Println("[*] New API telemetry packet")
-				/*for i, b := range tm.RawData {
-					if i%20 == 0 {
-						fmt.Printf("\n")
-					}
-					fmt.Printf("%02X ", b)
-				}*/
 				fmt.Printf("\n\tTid: 0x%X\n\tFunction: %s!%s\n", apiCall.ThreadId, apiCall.DllName, apiCall.FuncName)
-				//fmt.Println(apiCall.Args)
 				for i, arg := range apiCall.Args {
 					switch arg.Type {
 					case API_ARG_TYPE_DWORD:
-						fmt.Printf("\tArg #%d (DWORD): %d\n", i, ReadDWORDValue(arg.RawData[:]))
+						fmt.Printf("\tArg #%d (DWORD): %d\n", i, arg.Read())
 					case API_ARG_TYPE_ASTRING:
-						fmt.Printf("\tArg #%d (ASTRING): %s\n", i, ReadAnsiStringValue(arg.RawData[:]))
+						fmt.Printf("\tArg #%d (ASTRING): %s\n", i, arg.Read())
 					case API_ARG_TYPE_WSTRING:
-						fmt.Printf("\tArg #%d (WSTRING): %s\n", i, ReadWideStringValue(arg.RawData[:]))
+						fmt.Printf("\tArg #%d (WSTRING): %s\n", i, arg.Read())
 					case API_ARG_TYPE_BOOL:
-						bval := ReadBoolValue(arg.RawData[:])
+						bval := arg.Read().(bool)
 						if bval {
 							fmt.Printf("\tArg #%d (BOOL): TRUE\n", i)
 						} else {
@@ -226,26 +214,26 @@ func telemetryHandler(conn net.Conn, wg *sync.WaitGroup, terminate chan struct{}
 						fmt.Printf("\tArg #%d (LPVOID): 0x%X\n", i, ReadPointerValue(arg.RawData[:]))
 					}
 				}
-				fmt.Printf("size of packet: %d\n", unsafe.Sizeof(tm))
-				//TODO: add to api call history
 
 			case TM_TYPE_TEXT_INTEGRITY:
-				var textCheck TextCheckData
-				buf := bytes.NewReader(tm.RawData[:])
-				err := binary.Read(buf, binary.LittleEndian, &textCheck)
+				textCheck := ParseTextTelemetryPacket(dataBuf)
 				if err != nil {
 					color.Red("\n[!] Failed to decode TextCheckData: %v", err)
 					continue
 				}
 				if textCheck.Result {
-					color.Green("[telemetry] .text integrity check of process %d: TRUE", tm.Header.Pid)
+					color.Green("[telemetry] .text integrity check of process %d: TRUE", tmHeader.Pid)
 					//TODO: log
 				} else {
 					//TODO: log
-					color.Red("[telemetry] .text integrity check of process %d: FALSE", tm.Header.Pid)
-					MemoryScanEx(tm.Header.Pid, scanner)
-					//TODO: callback should add matches to some data structure,
-					//TODO: maybe here trigger a check of it
+					color.Red("[telemetry] .text integrity check of process %d: FALSE", tmHeader.Pid)
+					results, err := MemoryScanEx(tmHeader.Pid, scanner)
+					if err != nil {
+						color.Red("[!] Failed to run MemoryScanEx on process %d: %v", tmHeader.Pid, err)
+					} else if len(results) > 0 {
+						//TODO: yara scan got matches; add them somewhere in the process entry
+						//TODO: anything else?
+					}
 				}
 			}
 		}

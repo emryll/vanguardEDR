@@ -3,14 +3,17 @@ package main
 import (
 	"sync"
 	"time"
+
+	yara "github.com/VirusTotal/yara-x/go"
+	"github.com/fatih/color"
 )
 
 var (
-	processes = make(map[int]Process) // key: pid
+	processes = make(map[int]*Process) // key: pid
 	mu        sync.Mutex
 	scannerMu sync.Mutex
-	scanner   *C.YRX_SCANNER
-	rules     *C.YRX_RULES
+	scanner   *yara.Scanner
+	rules     *yara.Rules
 )
 
 // TODO: test
@@ -26,8 +29,10 @@ func PeriodicScanScheduler(wg *sync.WaitGroup, terminate chan struct{}) {
 		priorityTasks = make(chan Scan)
 	)
 
-	//TODO: use some user data struct to save matches into
-	C.InitializeYara(rules, scanner, nil)
+	rules, scanner, err := LoadYaraRulesFromFolder("")
+	if err != nil {
+		color.Red("[!] Failed to load yara rules: %v", err)
+	}
 
 	const numWorkers = 10
 	for w := 0; w < numWorkers; w++ {
@@ -40,7 +45,8 @@ func PeriodicScanScheduler(wg *sync.WaitGroup, terminate chan struct{}) {
 		case <-terminate:
 			close(tasks)
 			close(priorityTasks)
-			C.UninitializeYara(rules, scanner)
+			scanner.Destroy()
+			rules.Destroy()
 			return
 		case <-memoryScan.C:
 			for pid, process := range processes {
@@ -54,9 +60,10 @@ func PeriodicScanScheduler(wg *sync.WaitGroup, terminate chan struct{}) {
 			now := time.Now().Unix()
 			for pid, process := range processes {
 				if process.LastHeartbeat < (now - MAX_HEARTBEAT_DELAY) {
-					//TODO: mutex
 					TerminateProcess(pid)
+					mu.Lock()
 					delete(processes, pid)
+					mu.Unlock()
 				}
 			}
 		}
@@ -72,12 +79,26 @@ func PeriodicScanHandler(wg *sync.WaitGroup, priorityTasks chan Scan, tasks chan
 		case scan := <-priorityTasks: // prioritize unsigned processes
 			switch scan.Type {
 			case SCAN_MEMORYSCAN:
-				C.MemoryScan(scan.Pid, scanner)
+				results, err := BasicMemoryScan(uint32(scan.Pid), scanner)
+				if err != nil {
+					color.Red("[!] Failed to perform memory scan: %v", err)
+				}
+				//TODO: increment yara score, append results to log
+				for _, result := range results {
+					result.Print()
+				}
 			}
 		case scan := <-tasks:
 			switch scan.Type {
 			case SCAN_MEMORYSCAN:
-				C.MemoryScan(scan.Pid, scanner)
+				results, err := BasicMemoryScan(uint32(scan.Pid), scanner)
+				if err != nil {
+					color.Red("[!] Failed to perform memory scan: %v", err)
+				}
+				//TODO: increment yara score, append results to log
+				for _, result := range results {
+					result.Print()
+				}
 			}
 		}
 	}
@@ -88,11 +109,12 @@ func main() {
 		wg        sync.WaitGroup
 		terminate = make(chan struct{})
 	)
-	wg.Add(5)
+	//wg.Add(5)
+	wg.Add(2)
 	go heartbeatListener(&wg, terminate)
 	go telemetryListener(&wg, terminate)
-	go commandHandler(&wg, terminate)
-	go PeriodicScanScheduler(&wg, terminate)
-	go HistoryCleaner(&wg, terminate)
+	//go commandListener(&wg) //TODO add terminate
+	//go PeriodicScanScheduler(&wg, terminate)
+	//go HistoryCleaner(&wg, terminate)
 	wg.Wait()
 }
