@@ -92,14 +92,14 @@ typedef struct {
         BOOL    boolValue;
         PVOID   ptrValue;
     } arg;
-} API_ARGPAIR;
+} API_ARG;
 
 typedef struct {
     DWORD    tid;
     char     dllName[60];
     char     funcName[60];
-    API_ARGPAIR args[MAX_API_ARGS];
-} API_CALL;
+    DWORD    argCount;
+} API_CALL_HEADER;
 
 typedef enum {
     FILE_ACTION_CREATE,
@@ -123,7 +123,7 @@ typedef struct {
     char module[260];
 } TEXT_CHECK;
 
-//TODO change this shit lmaoo, dont list so many damn matches especially with strings
+//TODO change this shit lmaoo, dont list so many damn matches especially with strings. makes it 67kB
 typedef struct {
     size_t mismatchCount;
     char mismatches[260][260];
@@ -132,11 +132,15 @@ typedef struct {
 typedef struct {
     DWORD  pid;
     DWORD  type;
+    size_t  dataSize;
     time_t timeStamp;
 } TELEMETRY_HEADER;
 
+//? instead of using an union, be more memory efficient and send only what you need
+//? in a different struct which you can just memcpy() into a buffer after the header
+/*
 typedef struct {
-    TELEMETRY_HEADER header; //16B
+    TELEMETRY_HEADER header; //24B
     union {
         API_CALL   apiCall;
         FILE_EVENT fileEvent;
@@ -145,7 +149,7 @@ typedef struct {
         FUNC_CHECK funcCheck;
     } data;
 } TELEMETRY;
-
+*/
 // utils.c
 void GetHookIntegrityTelemetryPacket(TELEMETRY*, int*, int);
 void GetHookBaseTelemetryPacket(TELEMETRY*, LPCSTR, LPCSTR);
@@ -180,17 +184,19 @@ typedef enum {
     HOOK_NT_ALLOC_VM_EX,
     HOOK_OPEN_PROCESS,
     HOOK_NT_OPEN_PROCESS,
-/*    HOOK_CREATE_PROCESS_A,
+    HOOK_CREATE_PROCESS_A,
     HOOK_CREATE_PROCESS_W,
+    HOOK_CREATE_PROCESS_AS_USER_A,
+    HOOK_CREATE_PROCESS_AS_USER_W,
     HOOK_NT_CREATE_PROCESS,
     HOOK_NT_CREATE_PROCESS_EX,
-    HOOK_NT_CREATE_USER_PROCESS,*/
+    HOOK_NT_CREATE_USER_PROCESS,
     HOOK_CREATE_REMOTE_THREAD,
     HOOK_CREATE_REMOTE_THREAD_EX,
     HOOK_NT_CREATE_THREAD,
     HOOK_NT_CREATE_THREAD_EX,
-/*    HOOK_QUEUE_USER_APC,
-    HOOK_NT_QUEUE_APC_THREAD,
+    HOOK_QUEUE_USER_APC,
+/*    HOOK_NT_QUEUE_APC_THREAD,
     HOOK_HEAP_ALLOC,
     HOOK_HEAP_REALLOC,
     HOOK_NT_UNMAP_VIEW,
