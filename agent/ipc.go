@@ -78,7 +78,7 @@ func heartbeatHandler(conn net.Conn, wg *sync.WaitGroup, terminate chan struct{}
 			if p, exists := processes[int(hb.Pid)]; exists {
 				p.LastHeartbeat = time.Now().Unix()
 			} else {
-				color.Green("[+] New process detected (%d)", hb.Pid)
+				color.Green("[heartbeat] New tracked process detected (%d)", hb.Pid)
 				path, err := GetProcessExecutable(hb.Pid)
 				if err != nil {
 					TerminateProcess(int(hb.Pid))
@@ -98,10 +98,11 @@ func heartbeatHandler(conn net.Conn, wg *sync.WaitGroup, terminate chan struct{}
 					isSigned = true
 					color.Green("[+] Process %d with path %s is signed", hb.Pid, path)
 				case HASH_MISMATCH:
-					color.Red("[!] Signature hash mismatch in %s!", path)
+					color.Red("[!] Signature hash mismatch in %s! (PID %d)", path, hb.Pid)
 					TerminateProcess(int(hb.Pid))
 					continue
 				}
+				// add new process to process map
 				mu.Lock()
 				processes[int(hb.Pid)] = &Process{Path: path,
 					LastHeartbeat: time.Now().Unix(),
@@ -184,58 +185,8 @@ func telemetryHandler(conn net.Conn, wg *sync.WaitGroup, terminate chan struct{}
 				continue
 			}
 
-			switch tmHeader.Type {
-			case TM_TYPE_API_CALL:
-				//TODO: log
-				//* parse packet and add to process' api call history
-				apiCall := ParseApiTelemetryPacket(dataBuf)
-				apiCall.TimeStamp = tmHeader.TimeStamp
-				processes[int(tmHeader.Pid)].PushToApiCallHistory(apiCall)
-
-				//* debug prints
-				fmt.Println("[*] New API telemetry packet")
-				fmt.Printf("\n\tTid: 0x%X\n\tFunction: %s!%s\n", apiCall.ThreadId, apiCall.DllName, apiCall.FuncName)
-				for i, arg := range apiCall.Args {
-					switch arg.Type {
-					case API_ARG_TYPE_DWORD:
-						fmt.Printf("\tArg #%d (DWORD): %d\n", i, arg.Read())
-					case API_ARG_TYPE_ASTRING:
-						fmt.Printf("\tArg #%d (ASTRING): %s\n", i, arg.Read())
-					case API_ARG_TYPE_WSTRING:
-						fmt.Printf("\tArg #%d (WSTRING): %s\n", i, arg.Read())
-					case API_ARG_TYPE_BOOL:
-						bval := arg.Read().(bool)
-						if bval {
-							fmt.Printf("\tArg #%d (BOOL): TRUE\n", i)
-						} else {
-							fmt.Printf("\tArg #%d (BOOL): FALSE\n", i)
-						}
-					case API_ARG_TYPE_PTR:
-						fmt.Printf("\tArg #%d (LPVOID): 0x%X\n", i, ReadPointerValue(arg.RawData[:]))
-					}
-				}
-
-			case TM_TYPE_TEXT_INTEGRITY:
-				textCheck := ParseTextTelemetryPacket(dataBuf)
-				if err != nil {
-					color.Red("\n[!] Failed to decode TextCheckData: %v", err)
-					continue
-				}
-				if textCheck.Result {
-					color.Green("[telemetry] .text integrity check of process %d: TRUE", tmHeader.Pid)
-					//TODO: log
-				} else {
-					//TODO: log
-					color.Red("[telemetry] .text integrity check of process %d: FALSE", tmHeader.Pid)
-					results, err := MemoryScanEx(tmHeader.Pid, scanner)
-					if err != nil {
-						color.Red("[!] Failed to run MemoryScanEx on process %d: %v", tmHeader.Pid, err)
-					} else if len(results) > 0 {
-						//TODO: yara scan got matches; add them somewhere in the process entry
-						//TODO: anything else?
-					}
-				}
-			}
+			//* this will add it to process' history and handle logging
+			tmHeader.Log(dataBuf)
 		}
 	}
 }

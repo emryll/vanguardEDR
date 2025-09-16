@@ -10,6 +10,7 @@ import (
 	"os/exec"
 	"sort"
 	"strings"
+	"time"
 	"unicode/utf16"
 	"unsafe"
 
@@ -78,6 +79,7 @@ func GetProcessExecutable(pid uint32) (string, error) {
 	return windows.UTF16ToString(buf[:size]), nil
 }
 
+// TODO: test
 // remove all items in history which are older than timestamp threshold
 func Cleanup[T any, H History[T]](history []H, threshold int64) []H {
 	// sort history in ascending order
@@ -359,7 +361,7 @@ func (api *ApiCallData) PushNewEntry(new ApiCallData) {
 func (p *Process) PushToApiCallHistory(api ApiCallData) {
 	call, exists := p.APICalls[api.FuncName]
 	if exists {
-		// this is a copy of the value
+		// call is a copy of the value
 		call.PushNewEntry(api)
 		p.APICalls[api.FuncName] = call
 	} else {
@@ -384,4 +386,153 @@ func (arg ApiArg) Read() any {
 		return ReadPointerValue(arg.RawData[:])
 	}
 	return nil
+}
+
+// This method will log telemetry packet to file on disk (logFile), add it to process history,
+// and print it out if printLog is enabled. It will also launch further action if needed
+func (header TelemetryHeader) Log(dataBuf []byte) {
+	t := time.Unix(header.TimeStamp, 0)
+	formatted := t.Format("15:04:05")
+
+	switch header.Type {
+	case TM_TYPE_EMPTY_VALUE:
+		return
+	case TM_TYPE_API_CALL:
+		head := fmt.Sprintf("\n\n[%s] PID: %d, new API call\n", formatted, header.Pid)
+		logFile.WriteString(head)
+		if printLog {
+			fmt.Printf(head)
+		}
+
+		//* Parse packet and add to process' API call history
+		apiCall := ParseApiTelemetryPacket(dataBuf)
+		apiCall.TimeStamp = header.TimeStamp
+		mu.Lock()
+		processes[int(header.Pid)].PushToApiCallHistory(apiCall)
+		mu.Unlock()
+
+		api := fmt.Sprintf("\t[TID: %d] %s!%s:\n", apiCall.ThreadId, apiCall.DllName, apiCall.FuncName)
+		logFile.WriteString(api)
+		if printLog {
+			fmt.Printf(api)
+		}
+		//* Log the args
+		for i, arg := range apiCall.Args {
+			var line string
+			switch arg.Type {
+			case API_ARG_TYPE_EMPTY:
+				continue
+			case API_ARG_TYPE_DWORD:
+				line = fmt.Sprintf("\tArg #%d (DWORD): %d\n", i, arg.Read())
+			case API_ARG_TYPE_ASTRING:
+				line = fmt.Sprintf("\tArg #%d (ASTRING): %s\n", i, arg.Read())
+			case API_ARG_TYPE_WSTRING:
+				line = fmt.Sprintf("\tArg #%d (WSTRING): %s\n", i, arg.Read())
+			case API_ARG_TYPE_PTR:
+				line = fmt.Sprintf("\tArg #%d (LPVOID): 0x%X\n", i, arg.Read())
+			case API_ARG_TYPE_BOOL:
+				bval := arg.Read().(bool) //? ^probably need to do this cast with all of them
+				if bval {
+					line = fmt.Sprintf("\tArg #%d (BOOL): TRUE\n", i)
+				} else {
+					line = fmt.Sprintf("\tArg #%d (BOOL): FALSE\n", i)
+				}
+			}
+			logFile.WriteString(line)
+			if printLog {
+				fmt.Printf(line)
+			}
+		}
+	case TM_TYPE_TEXT_INTEGRITY: //TODO: maybe only log hash mismatches
+		var line string
+		head := fmt.Sprintf("\n\n[%s] PID: %d, new .text integrity check\n", formatted, header.Pid)
+		logFile.WriteString(head)
+
+		//* Parse and log result of check
+		textCheck := ParseTextTelemetryPacket(dataBuf)
+		if textCheck.Result { // true means the integrity remains, its fine
+			line = fmt.Sprintf("\tModule \"%s\" integrity: TRUE\n", textCheck.Module)
+		} else { // hash mismatch
+			line = fmt.Sprintf("\tModule \"%s\" integrity: FALSE\n", textCheck.Module)
+			go func() { // goroutine so memscan does not block execution
+				results, err := MemoryScanEx(header.Pid, scanner)
+				if err != nil {
+					errMsg := fmt.Sprintf("\n[!] Failed to launch MemoryScanEx on process %d: %v\n", header.Pid, err)
+					logFile.WriteString(errMsg)
+					if printLog {
+						color.Red(errMsg)
+					} else if results.TotalScore > 0 {
+						go results.Log("MemoryScanEx", header.Pid) // goroutine to not block execution, self-explanatory func
+					}
+				}
+			}()
+		}
+		logFile.WriteString(line)
+		if printLog {
+			fmt.Printf(line)
+		}
+
+		//TODO: case TM_TYPE_FILE_EVENT:
+		//TODO: case TM_TYPE_REG_EVENT:
+	}
+	//* Add a line after the log
+	logFile.WriteString("\n")
+	if printLog {
+		fmt.Printf("\n")
+	}
+}
+
+// Process and log results. Launch further actions or alerts if needed
+func (r Results) Log(scanName string, pid int) {
+	head := fmt.Sprintf("\n\nGot %d total score from %s (%d matches)\n", r.TotalScore, scanName, len(r.Matches))
+	logFile.WriteString(head)
+	if printLog {
+		fmt.Printf(head)
+	}
+
+	mu.Lock()
+	processes[pid].YaraScore += r.TotalScore
+	processes[pid].TotalScore += r.TotalScore
+	mu.Unlock()
+	//TODO: check if score exceeds thresholds, make a function for this
+
+	//TODO: if m.Severity is severe, trigger an alert
+	for _, m := range r.Matches {
+		t := time.Unix(m.TimeStamp, 0)
+		formatted := t.Format("15:04:05")
+
+		var name string
+		if m.Name == "" {
+			name = m.Description
+		} else {
+			name = m.Name
+		}
+		match := fmt.Sprintf("[%s] %s (+%d)\n", formatted, name, m.Score)
+		logFile.WriteString(match)
+		if m.Description != "" {
+			desc := fmt.Sprintf("\t[?] %s\n", m.Description)
+			logFile.WriteString(desc)
+		}
+		if len(m.Category) > 0 {
+			categories := "\tCategory: "
+			for i, c := range m.Category {
+				categories += c
+				if len(m.Category) > i+1 {
+					categories += ", "
+				}
+			}
+			categories += "\n"
+			logFile.WriteString(categories)
+		}
+		//* update process' history
+		mu.Lock()
+		_, exists := processes[pid].PatternMatches[name]
+		if exists {
+			processes[pid].PatternMatches[name].Count++
+		} else {
+			processes[pid].PatternMatches[name] = m
+		}
+		mu.Unlock()
+	}
+	logFile.WriteString("\n\n")
 }
