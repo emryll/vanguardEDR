@@ -1,6 +1,7 @@
 package main
 
 import (
+	"os"
 	"sync"
 	"time"
 
@@ -9,6 +10,9 @@ import (
 )
 
 var (
+	printLog  = true
+	logFile   *os.File
+	logName   = "agent.log"
 	processes = make(map[int]*Process) // key: pid
 	mu        sync.Mutex
 	scannerMu sync.Mutex
@@ -49,23 +53,27 @@ func PeriodicScanScheduler(wg *sync.WaitGroup, terminate chan struct{}) {
 			rules.Destroy()
 			return
 		case <-memoryScan.C:
-			for pid, process := range processes {
-				if process.IsSigned {
-					tasks <- Scan{Pid: pid, Type: SCAN_MEMORYSCAN}
-				} else {
-					priorityTasks <- Scan{Pid: pid, Type: SCAN_MEMORYSCAN}
+			go func() { // launch a goroutine to schedule memory scans
+				for pid, process := range processes {
+					if process.IsSigned {
+						tasks <- Scan{Pid: pid, Type: SCAN_MEMORYSCAN}
+					} else {
+						priorityTasks <- Scan{Pid: pid, Type: SCAN_MEMORYSCAN}
+					}
 				}
-			}
+			}()
 		case <-heartbeat.C:
-			now := time.Now().Unix()
-			for pid, process := range processes {
-				if process.LastHeartbeat < (now - MAX_HEARTBEAT_DELAY) {
-					TerminateProcess(pid)
-					mu.Lock()
-					delete(processes, pid)
-					mu.Unlock()
+			go func() { // launch a goroutine to check each heartbeat
+				for pid, process := range processes {
+					now := time.Now().Unix()
+					if process.LastHeartbeat < (now - MAX_HEARTBEAT_DELAY) {
+						TerminateProcess(pid)
+						mu.Lock()
+						delete(processes, pid)
+						mu.Unlock()
+					}
 				}
-			}
+			}()
 		}
 	}
 }
@@ -108,13 +116,20 @@ func main() {
 	var (
 		wg        sync.WaitGroup
 		terminate = make(chan struct{})
+		err       error // define because of global var
 	)
+	logFile, err = os.OpenFile(logName, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+	if err != nil {
+		color.Red("\n[!] Failed to open log: %v", err)
+		//TODO: should you return?
+	}
+	defer logFile.Close()
 	//wg.Add(5)
-	wg.Add(2)
+	wg.Add(3)
 	go heartbeatListener(&wg, terminate)
 	go telemetryListener(&wg, terminate)
 	//go commandListener(&wg) //TODO add terminate
-	//go PeriodicScanScheduler(&wg, terminate)
+	go PeriodicScanScheduler(&wg, terminate)
 	//go HistoryCleaner(&wg, terminate)
 	wg.Wait()
 }
