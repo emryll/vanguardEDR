@@ -18,33 +18,41 @@ HANDLE CreateRemoteThread_Handler(
     LPVOID                 lpParameter,
     DWORD                  dwCreationFlags,
     LPDWORD                lpThreadId) {
-    TELEMETRY tm;
-    GetHookBaseTelemetryPacket(&tm, "kernel32.dll", "CreateRemoteThread");
-    
-    tm.data.apiCall.args[0].arg.ptrValue = hProcess;
-    tm.data.apiCall.args[0].type         = API_ARG_TYPE_PTR;
-    
-    tm.data.apiCall.args[1].arg.ptrValue = lpThreadAttributes;
-    tm.data.apiCall.args[1].type         = API_ARG_TYPE_PTR;
+    size_t packetSize = GetTelemetryPacketSize(TM_TYPE_API_CALL, 7);
+    // raw buffer for dynamically sized packets
+    BYTE* packet = (BYTE*)malloc(packetSize);
+    TELEMETRY_HEADER header = GetTelemetryHeader(TM_TYPE_API_CALL, packetSize - sizeof(TELEMETRY_HEADER));
+    API_CALL_HEADER apiHeader = GetApiCallHeader("kernel32.dll", "CreateRemoteThread", 7);
 
-    tm.data.apiCall.args[2].arg.dwValue = dwStackSize;
-    tm.data.apiCall.args[2].type         = API_ARG_TYPE_DWORD;
+    API_ARG args[7];
+    args[0].arg.ptrValue = hProcess;
+    args[0].type         = API_ARG_TYPE_PTR;
     
-    tm.data.apiCall.args[3].arg.ptrValue = lpStartAddress;
-    tm.data.apiCall.args[3].type         = API_ARG_TYPE_PTR;
-    
-    tm.data.apiCall.args[4].arg.ptrValue = lpParameter;
-    tm.data.apiCall.args[4].type         = API_ARG_TYPE_PTR;
-    
-    tm.data.apiCall.args[5].arg.dwValue  = dwCreationFlags;
-    tm.data.apiCall.args[5].type         = API_ARG_TYPE_DWORD;
+    args[1].arg.ptrValue = lpThreadAttributes;
+    args[1].type         = API_ARG_TYPE_PTR;
 
-    tm.data.apiCall.args[6].arg.dwValue = *lpThreadId;
-    tm.data.apiCall.args[6].type         = API_ARG_TYPE_DWORD;
+    args[2].arg.dwValue = dwStackSize;
+    args[2].type         = API_ARG_TYPE_DWORD;
+    
+    args[3].arg.ptrValue = lpStartAddress;
+    args[3].type         = API_ARG_TYPE_PTR;
+    
+    args[4].arg.ptrValue = lpParameter;
+    args[4].type         = API_ARG_TYPE_PTR;
+    
+    args[5].arg.dwValue  = dwCreationFlags;
+    args[5].type         = API_ARG_TYPE_DWORD;
 
-    FillEmptyArgs(&tm, 7);
+    args[6].arg.dwValue = *lpThreadId;
+    args[6].type         = API_ARG_TYPE_DWORD;
+
+    // copy each component into buffer to form packet
+    memcpy(packet, &header, sizeof(header));
+    memcpy(packet, &apiHeader, sizeof(apiHeader));
+    memcpy(packet, &args, sizeof(args));
+
     DWORD dwBytesWritten;
-    WriteFile(hTelemetry, &tm, sizeof(tm), &dwBytesWritten, NULL);
+    WriteFile(hTelemetry, &packet, packetSize, &dwBytesWritten, NULL);
     return ((CREATEREMOTETHREAD)HookList[HOOK_CREATE_REMOTE_THREAD].originalFunc)(hProcess, lpThreadAttributes, dwStackSize, lpStartAddress, lpParameter, dwCreationFlags, lpThreadId);
 }
 
@@ -57,36 +65,44 @@ HANDLE CreateRemoteThreadEx_Handler(
     DWORD                        dwCreationFlags,
     LPPROC_THREAD_ATTRIBUTE_LIST lpAttributeList,
     LPDWORD                      lpThreadId) {
-    TELEMETRY tm;
-    GetHookBaseTelemetryPacket(&tm, "kernel32.dll", "CreateRemoteThreadEx");
-    
-    tm.data.apiCall.args[0].arg.ptrValue = hProcess;
-    tm.data.apiCall.args[0].type         = API_ARG_TYPE_PTR;
-    
-    tm.data.apiCall.args[1].arg.ptrValue = lpThreadAttributes;
-    tm.data.apiCall.args[1].type         = API_ARG_TYPE_PTR;
+    size_t packetSize = GetTelemetryPacketSize(TM_TYPE_API_CALL, 8);
+    // raw buffer for dynamically sized packets
+    BYTE* packet = (BYTE*)malloc(packetSize);
+    TELEMETRY_HEADER header = GetTelemetryHeader(TM_TYPE_API_CALL, packetSize - sizeof(TELEMETRY_HEADER));
+    API_CALL_HEADER apiHeader = GetApiCallHeader("kernel32.dll", "CreateRemoteThreadEx", 8);
 
-    tm.data.apiCall.args[2].arg.dwValue = dwStackSize;
-    tm.data.apiCall.args[2].type         = API_ARG_TYPE_DWORD;
+    API_ARG args[8];
+    args[0].arg.ptrValue = hProcess;
+    args[0].type         = API_ARG_TYPE_PTR;
     
-    tm.data.apiCall.args[3].arg.ptrValue = lpStartAddress;
-    tm.data.apiCall.args[3].type         = API_ARG_TYPE_PTR;
+    args[1].arg.ptrValue = lpThreadAttributes;
+    args[1].type         = API_ARG_TYPE_PTR;
+
+    args[2].arg.dwValue = dwStackSize;
+    args[2].type         = API_ARG_TYPE_DWORD;
     
-    tm.data.apiCall.args[4].arg.ptrValue = lpParameter;
-    tm.data.apiCall.args[4].type         = API_ARG_TYPE_PTR;
+    args[3].arg.ptrValue = lpStartAddress;
+    args[3].type         = API_ARG_TYPE_PTR;
     
-    tm.data.apiCall.args[5].arg.dwValue  = dwCreationFlags;
-    tm.data.apiCall.args[5].type         = API_ARG_TYPE_DWORD;
+    args[4].arg.ptrValue = lpParameter;
+    args[4].type         = API_ARG_TYPE_PTR;
+    
+    args[5].arg.dwValue  = dwCreationFlags;
+    args[5].type         = API_ARG_TYPE_DWORD;
 
-    tm.data.apiCall.args[6].arg.ptrValue = lpAttributeList;
-    tm.data.apiCall.args[6].type         = API_ARG_TYPE_PTR;
+    args[6].arg.ptrValue = lpAttributeList;
+    args[6].type         = API_ARG_TYPE_PTR;
 
-    tm.data.apiCall.args[7].arg.dwValue = *lpThreadId;
-    tm.data.apiCall.args[7].type         = API_ARG_TYPE_DWORD;
+    args[7].arg.dwValue = *lpThreadId;
+    args[7].type         = API_ARG_TYPE_DWORD;
 
-    FillEmptyArgs(&tm, 8);
+    // copy each component into buffer to form packet
+    memcpy(packet, &header, sizeof(header));
+    memcpy(packet, &apiHeader, sizeof(apiHeader));
+    memcpy(packet, &args, sizeof(args));
+
     DWORD dwBytesWritten;
-    WriteFile(hTelemetry, &tm, sizeof(tm), &dwBytesWritten, NULL);
+    WriteFile(hTelemetry, &packet, packetSize, &dwBytesWritten, NULL);
 
     return ((CREATEREMOTETHREADEX)HookList[HOOK_CREATE_REMOTE_THREAD_EX].originalFunc)(hProcess, lpThreadAttributes, dwStackSize, lpStartAddress, lpParameter, dwCreationFlags, lpAttributeList, lpThreadId);
 }
@@ -94,21 +110,26 @@ HANDLE CreateRemoteThreadEx_Handler(
 
 
 LPVOID VirtualAlloc_Handler(LPVOID lpAddress, SIZE_T dwSize, DWORD  flAllocationType, DWORD  flProtect) {
-    TELEMETRY tm;
-    GetHookBaseTelemetryPacket(&tm, "kernel32.dll", "VirtualAlloc");
+    size_t packetSize = GetTelemetryPacketSize(TM_TYPE_API_CALL, 4);
+    // raw buffer for dynamically sized packets
+    BYTE* packet = (BYTE*)malloc(packetSize);
+    TELEMETRY_HEADER header = GetTelemetryHeader(TM_TYPE_API_CALL, packetSize - sizeof(TELEMETRY_HEADER));
+    API_CALL_HEADER apiHeader = GetApiCallHeader("kernel32.dll", "VirtualAlloc", 4);
 
-    tm.data.apiCall.args[0].arg.ptrValue = lpAddress;
-    tm.data.apiCall.args[0].type         = API_ARG_TYPE_PTR;
+    API_ARG args[4];
+    args[0].arg.ptrValue = lpAddress;
+    args[0].type         = API_ARG_TYPE_PTR;
     
-    tm.data.apiCall.args[1].arg.dwValue = dwSize;
-    tm.data.apiCall.args[1].type         = API_ARG_TYPE_DWORD;
+    args[1].arg.dwValue = dwSize;
+    args[1].type         = API_ARG_TYPE_DWORD;
 
-    tm.data.apiCall.args[2].arg.dwValue = flAllocationType;
-    tm.data.apiCall.args[2].type         = API_ARG_TYPE_DWORD;
+    args[2].arg.dwValue = flAllocationType;
+    args[2].type         = API_ARG_TYPE_DWORD;
     
-    tm.data.apiCall.args[3].arg.dwValue = flProtect;
-    tm.data.apiCall.args[3].type         = API_ARG_TYPE_DWORD;
+    args[3].arg.dwValue = flProtect;
+    args[3].type         = API_ARG_TYPE_DWORD;
 
+  // debug prints
     fprintf(stderr, "VirtualAlloc hook\n\tHEADER\n\t\tpid: 0x%08X\n\t\ttype: 0x%08X\n\t\ttimestamp: 0x%X\n", tm.header.pid, tm.header.type, tm.header.timeStamp);
     fprintf(stderr, "\tDATA\n\t\ttid: 0x%08X\n\t\tdllName: %s\n\t\tfuncName: %s\n", tm.data.apiCall.tid, tm.data.apiCall.dllName, tm.data.apiCall.funcName);
     fprintf(stderr, "\n\t\tARG 0\n\t\ttype: 0x%08X\n\t\tPTR value: %p\n", tm.data.apiCall.args[0].type, tm.data.apiCall.args[0].arg.ptrValue);
@@ -116,15 +137,13 @@ LPVOID VirtualAlloc_Handler(LPVOID lpAddress, SIZE_T dwSize, DWORD  flAllocation
     fprintf(stderr, "\n\t\tARG 2\n\t\ttype: 0x%08X\n\t\tDWORD value: 0x%08X\n", tm.data.apiCall.args[2].type, tm.data.apiCall.args[2].arg.dwValue);
     fprintf(stderr, "\n\t\tARG 3\n\t\ttype: 0x%08X\n\t\tDWORD value: 0x%08X\n", tm.data.apiCall.args[3].type, tm.data.apiCall.args[3].arg.dwValue);
 
+    // copy each component into buffer to form packet
+    memcpy(packet, &header, sizeof(header));
+    memcpy(packet, &apiHeader, sizeof(apiHeader));
+    memcpy(packet, &args, sizeof(args));
 
-    FillEmptyArgs(&tm, 4);
     DWORD dwBytesWritten;
-    BOOL ok = WriteFile(hTelemetry, &tm, sizeof(tm), &dwBytesWritten, NULL);
-    if (!ok) {
-        fprintf(stderr, "[virtualalloc] failed to write to telemetry pipe: %d\n", GetLastError());
-    } else {
-        fprintf(stderr, "size of TELEMETRY: %d\n", sizeof(tm));
-    }
+    WriteFile(hTelemetry, &packet, packetSize, &dwBytesWritten, NULL);
     if (flProtect != PAGE_EXECUTE_READWRITE) {
         return ((VIRTUALALLOC)HookList[HOOK_VIRTUAL_ALLOC].originalFunc)(lpAddress, dwSize, flAllocationType, flProtect);
     } else {
@@ -141,33 +160,41 @@ LPVOID VirtualAlloc2_Handler(
     ULONG                  PageProtection,
     MEM_EXTENDED_PARAMETER *ExtendedParameters,
     ULONG                  ParameterCount) {
-    TELEMETRY tm;
-    GetHookBaseTelemetryPacket(&tm, "kernelbase.dll", "VirtualAlloc2");
-    FillEmptyArgs(&tm, 7);
+    size_t packetSize = GetTelemetryPacketSize(TM_TYPE_API_CALL, 7);
+    // raw buffer for dynamically sized packets
+    BYTE* packet = (BYTE*)malloc(packetSize);
+    TELEMETRY_HEADER header = GetTelemetryHeader(TM_TYPE_API_CALL, packetSize - sizeof(TELEMETRY_HEADER));
+    API_CALL_HEADER apiHeader = GetApiCallHeader("kernelbase.dll", "VirtualAlloc2", 7);
     
-    tm.data.apiCall.args[0].arg.ptrValue = Process;
-    tm.data.apiCall.args[0].type         = API_ARG_TYPE_PTR;
+    API_ARG args[7];
+    args[0].arg.ptrValue = Process;
+    args[0].type         = API_ARG_TYPE_PTR;
     
-    tm.data.apiCall.args[1].arg.ptrValue = BaseAddress;
-    tm.data.apiCall.args[1].type         = API_ARG_TYPE_PTR;
+    args[1].arg.ptrValue = BaseAddress;
+    args[1].type         = API_ARG_TYPE_PTR;
 
-    tm.data.apiCall.args[2].arg.dwValue = Size;
-    tm.data.apiCall.args[2].type         = API_ARG_TYPE_DWORD;
+    args[2].arg.dwValue = Size;
+    args[2].type         = API_ARG_TYPE_DWORD;
     
-    tm.data.apiCall.args[3].arg.dwValue  = AllocationType;
-    tm.data.apiCall.args[3].type         = API_ARG_TYPE_DWORD;
+    args[3].arg.dwValue  = AllocationType;
+    args[3].type         = API_ARG_TYPE_DWORD;
 
-    tm.data.apiCall.args[4].arg.dwValue  = PageProtection;
-    tm.data.apiCall.args[4].type         = API_ARG_TYPE_DWORD;
+    args[4].arg.dwValue  = PageProtection;
+    args[4].type         = API_ARG_TYPE_DWORD;
 
-    tm.data.apiCall.args[5].arg.ptrValue = ExtendedParameters;
-    tm.data.apiCall.args[5].type         = API_ARG_TYPE_PTR;
+    args[5].arg.ptrValue = ExtendedParameters;
+    args[5].type         = API_ARG_TYPE_PTR;
 
-    tm.data.apiCall.args[6].arg.dwValue  = ParameterCount;
-    tm.data.apiCall.args[6].type         = API_ARG_TYPE_DWORD;
+    args[6].arg.dwValue  = ParameterCount;
+    args[6].type         = API_ARG_TYPE_DWORD;
+
+    // copy each component into buffer to form packet
+    memcpy(packet, &header, sizeof(header));
+    memcpy(packet, &apiHeader, sizeof(apiHeader));
+    memcpy(packet, &args, sizeof(args));
 
     DWORD dwBytesWritten;
-    WriteFile(hTelemetry, &tm, sizeof(tm), &dwBytesWritten, NULL);
+    WriteFile(hTelemetry, &packet, packetSize, &dwBytesWritten, NULL);
     if (PageProtection != PAGE_EXECUTE_READWRITE) {
         return ((VIRTUALALLOC2)HookList[HOOK_VIRTUAL_ALLOC2].originalFunc)(Process, BaseAddress, Size, AllocationType, PageProtection, ExtendedParameters, ParameterCount);
     } else {
@@ -182,27 +209,35 @@ LPVOID VirtualAllocEx_Handler(
     SIZE_T dwSize,
     DWORD  flAllocationType,
     DWORD  flProtect) {
-    TELEMETRY tm;
-    GetHookBaseTelemetryPacket(&tm, "kernel32.dll", "VirtualAllocEx");
-    FillEmptyArgs(&tm, 5);
+    size_t packetSize = GetTelemetryPacketSize(TM_TYPE_API_CALL, 5);
+    // raw buffer for dynamically sized packets
+    BYTE* packet = (BYTE*)malloc(packetSize);
+    TELEMETRY_HEADER header = GetTelemetryHeader(TM_TYPE_API_CALL, packetSize - sizeof(TELEMETRY_HEADER));
+    API_CALL_HEADER apiHeader = GetApiCallHeader("kernel32.dll", "VirtualAllocEx", 5);
     
-    tm.data.apiCall.args[0].arg.ptrValue = hProcess;
-    tm.data.apiCall.args[0].type         = API_ARG_TYPE_PTR;
+    API_ARG args[5];
+    args[0].arg.ptrValue = hProcess;
+    args[0].type         = API_ARG_TYPE_PTR;
 
-    tm.data.apiCall.args[1].arg.ptrValue = lpAddress;
-    tm.data.apiCall.args[1].type         = API_ARG_TYPE_PTR;
+    args[1].arg.ptrValue = lpAddress;
+    args[1].type         = API_ARG_TYPE_PTR;
     
-    tm.data.apiCall.args[2].arg.dwValue = dwSize;
-    tm.data.apiCall.args[2].type         = API_ARG_TYPE_DWORD;
+    args[2].arg.dwValue = dwSize;
+    args[2].type         = API_ARG_TYPE_DWORD;
 
-    tm.data.apiCall.args[3].arg.dwValue = flAllocationType;
-    tm.data.apiCall.args[3].type         = API_ARG_TYPE_DWORD;
+    args[3].arg.dwValue = flAllocationType;
+    args[3].type         = API_ARG_TYPE_DWORD;
     
-    tm.data.apiCall.args[4].arg.dwValue = flProtect;
-    tm.data.apiCall.args[4].type         = API_ARG_TYPE_DWORD;
+    args[4].arg.dwValue = flProtect;
+    args[4].type         = API_ARG_TYPE_DWORD;
+
+    // copy each component into buffer to form packet
+    memcpy(packet, &header, sizeof(header));
+    memcpy(packet, &apiHeader, sizeof(apiHeader));
+    memcpy(packet, &args, sizeof(args));
 
     DWORD dwBytesWritten;
-    WriteFile(hTelemetry, &tm, sizeof(tm), &dwBytesWritten, NULL);
+    WriteFile(hTelemetry, &packet, packetSize, &dwBytesWritten, NULL);
     if (flProtect != PAGE_EXECUTE_READWRITE) {
         return ((VIRTUALALLOCEX)HookList[HOOK_VIRTUAL_ALLOC_EX].originalFunc)(hProcess, lpAddress, dwSize, flAllocationType, flProtect);
     } else {
@@ -212,49 +247,65 @@ LPVOID VirtualAllocEx_Handler(
 }
 
 BOOL VirtualProtect_Handler(LPVOID lpAddress, SIZE_T dwSize, DWORD  flNewProtect, PDWORD lpflOldProtect) {
-    TELEMETRY tm;
-    GetHookBaseTelemetryPacket(&tm, "kernel32.dll", "VirtualProtect");
-    FillEmptyArgs(&tm, 4);
-    
-    tm.data.apiCall.args[0].arg.ptrValue = lpAddress;
-    tm.data.apiCall.args[0].type         = API_ARG_TYPE_PTR;
-    
-    tm.data.apiCall.args[1].arg.dwValue = dwSize;
-    tm.data.apiCall.args[1].type         = API_ARG_TYPE_DWORD;
+    size_t packetSize = GetTelemetryPacketSize(TM_TYPE_API_CALL, 4);
+    // raw buffer for dynamically sized packets
+    BYTE* packet = (BYTE*)malloc(packetSize);
+    TELEMETRY_HEADER header = GetTelemetryHeader(TM_TYPE_API_CALL, packetSize - sizeof(TELEMETRY_HEADER));
+    API_CALL_HEADER apiHeader = GetApiCallHeader("kernelbase.dll", "VirtualProtect", 4);
 
-    tm.data.apiCall.args[2].arg.dwValue  = flNewProtect;
-    tm.data.apiCall.args[2].type         = API_ARG_TYPE_DWORD;
+    API_ARG args[4];
+    args[0].arg.ptrValue = lpAddress;
+    args[0].type         = API_ARG_TYPE_PTR;
     
-    tm.data.apiCall.args[3].arg.ptrValue = lpflOldProtect;
-    tm.data.apiCall.args[3].type         = API_ARG_TYPE_PTR;
+    args[1].arg.dwValue = dwSize;
+    args[1].type         = API_ARG_TYPE_DWORD;
+
+    args[2].arg.dwValue  = flNewProtect;
+    args[2].type         = API_ARG_TYPE_DWORD;
+    
+    args[3].arg.ptrValue = lpflOldProtect;
+    args[3].type         = API_ARG_TYPE_PTR;
+
+    // copy each component into buffer to form packet
+    memcpy(packet, &header, sizeof(header));
+    memcpy(packet, &apiHeader, sizeof(apiHeader));
+    memcpy(packet, &args, sizeof(args));
 
     DWORD dwBytesWritten;
-    WriteFile(hTelemetry, &tm, sizeof(tm), &dwBytesWritten, NULL);
+    WriteFile(hTelemetry, &packet, packetSize, &dwBytesWritten, NULL);
     return ((VIRTUALPROTECT)HookList[HOOK_VIRTUAL_PROTECT].originalFunc)(lpAddress, dwSize, flNewProtect, lpflOldProtect);
 }
 
 BOOL VirtualProtectEx_Handler(HANDLE hProcess, LPVOID lpAddress, SIZE_T dwSize, DWORD  flNewProtect, PDWORD lpflOldProtect) {
-    TELEMETRY tm;
-    GetHookBaseTelemetryPacket(&tm, "kernel32.dll", "VirtualProtectEx");
-    FillEmptyArgs(&tm, 5);
+    size_t packetSize = GetTelemetryPacketSize(TM_TYPE_API_CALL, 5);
+    // raw buffer for dynamically sized packets
+    BYTE* packet = (BYTE*)malloc(packetSize);
+    TELEMETRY_HEADER header = GetTelemetryHeader(TM_TYPE_API_CALL, packetSize - sizeof(TELEMETRY_HEADER));
+    API_CALL_HEADER apiHeader = GetApiCallHeader("kernelbase.dll", "VirtualProtectEx", 5);
     
-    tm.data.apiCall.args[0].arg.ptrValue = hProcess;
-    tm.data.apiCall.args[0].type         = API_ARG_TYPE_PTR;
+    API_ARG args[5];
+    args[0].arg.ptrValue = hProcess;
+    args[0].type         = API_ARG_TYPE_PTR;
 
-    tm.data.apiCall.args[1].arg.ptrValue = lpAddress;
-    tm.data.apiCall.args[1].type         = API_ARG_TYPE_PTR;
+    args[1].arg.ptrValue = lpAddress;
+    args[1].type         = API_ARG_TYPE_PTR;
     
-    tm.data.apiCall.args[2].arg.dwValue = dwSize;
-    tm.data.apiCall.args[2].type         = API_ARG_TYPE_DWORD;
+    args[2].arg.dwValue = dwSize;
+    args[2].type         = API_ARG_TYPE_DWORD;
 
-    tm.data.apiCall.args[3].arg.dwValue  = flNewProtect;
-    tm.data.apiCall.args[3].type         = API_ARG_TYPE_DWORD;
+    args[3].arg.dwValue  = flNewProtect;
+    args[3].type         = API_ARG_TYPE_DWORD;
     
-    tm.data.apiCall.args[4].arg.ptrValue = lpflOldProtect;
-    tm.data.apiCall.args[4].type         = API_ARG_TYPE_PTR;
+    args[4].arg.ptrValue = lpflOldProtect;
+    args[4].type         = API_ARG_TYPE_PTR;
+
+    // copy each component into buffer to form packet
+    memcpy(packet, &header, sizeof(header));
+    memcpy(packet, &apiHeader, sizeof(apiHeader));
+    memcpy(packet, &args, sizeof(args));
 
     DWORD dwBytesWritten;
-    WriteFile(hTelemetry, &tm, sizeof(tm), &dwBytesWritten, NULL);
+    WriteFile(hTelemetry, &packet, packetSize, &dwBytesWritten, NULL);
     return ((VIRTUALPROTECTEX)HookList[HOOK_VIRTUAL_PROTECT_EX].originalFunc)(hProcess, lpAddress, dwSize, flNewProtect, lpflOldProtect);
 }
 
@@ -264,27 +315,35 @@ NTSTATUS NtProtectVM_Handler(
     PSIZE_T RegionSize,
     ULONG NewProtection,
     PULONG OldProtection) {
-    TELEMETRY tm;
-    GetHookBaseTelemetryPacket(&tm, "ntdll.dll", "NtProtectVirtualMemory");
-    FillEmptyArgs(&tm, 5);
+    size_t packetSize = GetTelemetryPacketSize(TM_TYPE_API_CALL, 5);
+    // raw buffer for dynamically sized packets
+    BYTE* packet = (BYTE*)malloc(packetSize);
+    TELEMETRY_HEADER header = GetTelemetryHeader(TM_TYPE_API_CALL, packetSize - sizeof(TELEMETRY_HEADER));
+    API_CALL_HEADER apiHeader = GetApiCallHeader("ntdll.dll", "NtProtectVirtualMemory", 5);
 
-    tm.data.apiCall.args[0].arg.ptrValue = ProcessHandle;
-    tm.data.apiCall.args[0].type         = API_ARG_TYPE_PTR;
+    API_ARG args[5];
+    args[0].arg.ptrValue = ProcessHandle;
+    args[0].type         = API_ARG_TYPE_PTR;
 
-    tm.data.apiCall.args[1].arg.ptrValue = *BaseAddress;
-    tm.data.apiCall.args[1].type         = API_ARG_TYPE_PTR;
+    args[1].arg.ptrValue = *BaseAddress;
+    args[1].type         = API_ARG_TYPE_PTR;
     
-    tm.data.apiCall.args[2].arg.dwValue = *RegionSize;
-    tm.data.apiCall.args[2].type         = API_ARG_TYPE_DWORD;
+    args[2].arg.dwValue = *RegionSize;
+    args[2].type         = API_ARG_TYPE_DWORD;
 
-    tm.data.apiCall.args[3].arg.dwValue = NewProtection;
-    tm.data.apiCall.args[3].type         = API_ARG_TYPE_DWORD;
+    args[3].arg.dwValue = NewProtection;
+    args[3].type         = API_ARG_TYPE_DWORD;
     
-    tm.data.apiCall.args[4].arg.dwValue  = *OldProtection;
-    tm.data.apiCall.args[4].type         = API_ARG_TYPE_DWORD;
+    args[4].arg.dwValue  = *OldProtection;
+    args[4].type         = API_ARG_TYPE_DWORD;
+
+    // copy each component into buffer to form packet
+    memcpy(packet, &header, sizeof(header));
+    memcpy(packet, &apiHeader, sizeof(apiHeader));
+    memcpy(packet, &args, sizeof(args));
 
     DWORD dwBytesWritten;
-    WriteFile(hTelemetry, &tm, sizeof(tm), &dwBytesWritten, NULL);
+    WriteFile(hTelemetry, &packet, packetSize, &dwBytesWritten, NULL);
     return ((NTPROTECTVM)HookList[HOOK_NT_PROTECT_VM].originalFunc)(ProcessHandle, BaseAddress, RegionSize, NewProtection, OldProtection);
 }
 
@@ -295,30 +354,38 @@ NTSTATUS NtAllocateVM_Handler(
     PSIZE_T   RegionSize,
     ULONG     AllocationType,
     ULONG     Protect) {
-    TELEMETRY tm;
-    GetHookBaseTelemetryPacket(&tm, "ntdll.dll", "NtAllocateVirtualMemory");
-    FillEmptyArgs(&tm, 6);
+    size_t packetSize = GetTelemetryPacketSize(TM_TYPE_API_CALL, 6);
+    // raw buffer for dynamically sized packets
+    BYTE* packet = (BYTE*)malloc(packetSize);
+    TELEMETRY_HEADER header = GetTelemetryHeader(TM_TYPE_API_CALL, packetSize - sizeof(TELEMETRY_HEADER));
+    API_CALL_HEADER apiHeader = GetApiCallHeader("ntdll.dll", "NtAllocateVirtualMemory", 6);
 
-    tm.data.apiCall.args[0].arg.ptrValue = ProcessHandle;
-    tm.data.apiCall.args[0].type         = API_ARG_TYPE_PTR;
+    API_ARG args[6]
+    args[0].arg.ptrValue = ProcessHandle;
+    args[0].type         = API_ARG_TYPE_PTR;
 
-    tm.data.apiCall.args[1].arg.ptrValue = BaseAddress;
-    tm.data.apiCall.args[1].type         = API_ARG_TYPE_PTR;
+    args[1].arg.ptrValue = BaseAddress;
+    args[1].type         = API_ARG_TYPE_PTR;
     
-    tm.data.apiCall.args[2].arg.ptrValue = (PVOID)ZeroBits;
-    tm.data.apiCall.args[2].type         = API_ARG_TYPE_PTR;
+    args[2].arg.ptrValue = (PVOID)ZeroBits;
+    args[2].type         = API_ARG_TYPE_PTR;
 
-    tm.data.apiCall.args[3].arg.ptrValue = RegionSize;
-    tm.data.apiCall.args[3].type         = API_ARG_TYPE_PTR;
+    args[3].arg.ptrValue = RegionSize;
+    args[3].type         = API_ARG_TYPE_PTR;
     
-    tm.data.apiCall.args[4].arg.dwValue  = AllocationType;
-    tm.data.apiCall.args[4].type         = API_ARG_TYPE_DWORD;
+    args[4].arg.dwValue  = AllocationType;
+    args[4].type         = API_ARG_TYPE_DWORD;
 
-    tm.data.apiCall.args[5].arg.dwValue = Protect;
-    tm.data.apiCall.args[5].type        = API_ARG_TYPE_DWORD;
+    args[5].arg.dwValue = Protect;
+    args[5].type        = API_ARG_TYPE_DWORD;
+
+    // copy each component into buffer to form packet
+    memcpy(packet, &header, sizeof(header));
+    memcpy(packet, &apiHeader, sizeof(apiHeader));
+    memcpy(packet, &args, sizeof(args));
 
     DWORD dwBytesWritten;
-    WriteFile(hTelemetry, &tm, sizeof(tm), &dwBytesWritten, NULL);
+    WriteFile(hTelemetry, &packet, packetSize, &dwBytesWritten, NULL);
     if (Protect != PAGE_EXECUTE_READWRITE) {
         return ((NTALLOCVM)HookList[HOOK_NT_ALLOC_VM].originalFunc)(ProcessHandle, BaseAddress, ZeroBits, RegionSize, AllocationType, Protect);
     } else {
@@ -334,33 +401,41 @@ NTSTATUS NtAllocateVMEx_Handler(
     ULONG     Protect,
     PMEM_EXTENDED_PARAMETER ExtendedParameters,
     ULONG ExtendedParameterCount) {
-    TELEMETRY tm;
-    GetHookBaseTelemetryPacket(&tm, "ntdll.dll", "NtAllocateVirtualMemoryEx");
-    FillEmptyArgs(&tm, 7);
+    size_t packetSize = GetTelemetryPacketSize(TM_TYPE_API_CALL, 7);
+    // raw buffer for dynamically sized packets
+    BYTE* packet = (BYTE*)malloc(packetSize);
+    TELEMETRY_HEADER header = GetTelemetryHeader(TM_TYPE_API_CALL, packetSize - sizeof(TELEMETRY_HEADER));
+    API_CALL_HEADER apiHeader = GetApiCallHeader("ntdll.dll", "NtAllocateVirtualMemoryEx", 7);
 
-    tm.data.apiCall.args[0].arg.ptrValue = ProcessHandle;
-    tm.data.apiCall.args[0].type         = API_ARG_TYPE_PTR;
+    API_ARG args[7];
+    args[0].arg.ptrValue = ProcessHandle;
+    args[0].type         = API_ARG_TYPE_PTR;
 
-    tm.data.apiCall.args[1].arg.ptrValue = BaseAddress;
-    tm.data.apiCall.args[1].type         = API_ARG_TYPE_PTR;
+    args[1].arg.ptrValue = BaseAddress;
+    args[1].type         = API_ARG_TYPE_PTR;
     
-    tm.data.apiCall.args[2].arg.ptrValue = RegionSize;
-    tm.data.apiCall.args[2].type         = API_ARG_TYPE_PTR;
+    args[2].arg.ptrValue = RegionSize;
+    args[2].type         = API_ARG_TYPE_PTR;
     
-    tm.data.apiCall.args[3].arg.dwValue  = AllocationType;
-    tm.data.apiCall.args[3].type         = API_ARG_TYPE_DWORD;
+    args[3].arg.dwValue  = AllocationType;
+    args[3].type         = API_ARG_TYPE_DWORD;
 
-    tm.data.apiCall.args[4].arg.dwValue = Protect;
-    tm.data.apiCall.args[4].type        = API_ARG_TYPE_DWORD;
+    args[4].arg.dwValue = Protect;
+    args[4].type        = API_ARG_TYPE_DWORD;
 
-    tm.data.apiCall.args[5].arg.ptrValue = ExtendedParameters;
-    tm.data.apiCall.args[5].type         = API_ARG_TYPE_PTR;
+    args[5].arg.ptrValue = ExtendedParameters;
+    args[5].type         = API_ARG_TYPE_PTR;
 
-    tm.data.apiCall.args[6].arg.dwValue = ExtendedParameterCount;
-    tm.data.apiCall.args[6].type        = API_ARG_TYPE_DWORD;
+    args[6].arg.dwValue = ExtendedParameterCount;
+    args[6].type        = API_ARG_TYPE_DWORD;
+
+    // copy each component into buffer to form packet
+    memcpy(packet, &header, sizeof(header));
+    memcpy(packet, &apiHeader, sizeof(apiHeader));
+    memcpy(packet, &args, sizeof(args));
 
     DWORD dwBytesWritten;
-    WriteFile(hTelemetry, &tm, sizeof(tm), &dwBytesWritten, NULL);
+    WriteFile(hTelemetry, &packet, packetSize, &dwBytesWritten, NULL);
     if (Protect != PAGE_EXECUTE_READWRITE) {
         return ((NTALLOCVMEX)HookList[HOOK_NT_ALLOC_VM_EX].originalFunc)(ProcessHandle, BaseAddress, RegionSize, AllocationType, Protect, ExtendedParameters, ExtendedParameterCount);
     } else {
@@ -377,36 +452,44 @@ NTSTATUS NtCreateThread_Handler(
     PCONTEXT ThreadContext,
     void* InitialTeb, //PINITIAL_TEB
     BOOL CreateSuspended) {
-    TELEMETRY tm;
-    GetHookBaseTelemetryPacket(&tm, "ntdll.dll", "NtCreateThread");
-    FillEmptyArgs(&tm, 8);
+    size_t packetSize = GetTelemetryPacketSize(TM_TYPE_API_CALL, 7);
+    // raw buffer for dynamically sized packets
+    BYTE* packet = (BYTE*)malloc(packetSize);
+    TELEMETRY_HEADER header = GetTelemetryHeader(TM_TYPE_API_CALL, packetSize - sizeof(TELEMETRY_HEADER));
+    API_CALL_HEADER apiHeader = GetApiCallHeader("ntdll.dll", "NtCreateThread", 7);
     
-    tm.data.apiCall.args[0].arg.ptrValue = ThreadHandle;
-    tm.data.apiCall.args[0].type         = API_ARG_TYPE_PTR;
+    API_ARG args[8];
+    args[0].arg.ptrValue  = ThreadHandle;
+    args[0].type          = API_ARG_TYPE_PTR;
 
-    tm.data.apiCall.args[1].arg.dwValue  = DesiredAccess;
-    tm.data.apiCall.args[1].type         = API_ARG_TYPE_DWORD;
+    args[1].arg.dwValue   = DesiredAccess;
+    args[1].type          = API_ARG_TYPE_DWORD;
     
-    tm.data.apiCall.args[2].arg.ptrValue = (PVOID)ObjectAttributes;
-    tm.data.apiCall.args[2].type         = API_ARG_TYPE_PTR;
+    args[2].arg.ptrValue  = (PVOID)ObjectAttributes;
+    args[2].type          = API_ARG_TYPE_PTR;
 
-    tm.data.apiCall.args[3].arg.ptrValue = ProcessHandle;
-    tm.data.apiCall.args[3].type         = API_ARG_TYPE_PTR;
+    args[3].arg.ptrValue  = ProcessHandle;
+    args[3].type          = API_ARG_TYPE_PTR;
     
-    tm.data.apiCall.args[4].arg.ptrValue = ClientId;
-    tm.data.apiCall.args[4].type         = API_ARG_TYPE_PTR;
+    args[4].arg.ptrValue  = ClientId;
+    args[4].type          = API_ARG_TYPE_PTR;
 
-    tm.data.apiCall.args[5].arg.ptrValue = ThreadContext;
-    tm.data.apiCall.args[5].type         = API_ARG_TYPE_PTR;
+    args[5].arg.ptrValue  = ThreadContext;
+    args[5].type          = API_ARG_TYPE_PTR;
 
-    tm.data.apiCall.args[6].arg.ptrValue = InitialTeb;
-    tm.data.apiCall.args[6].type         = API_ARG_TYPE_PTR;
+    args[6].arg.ptrValue  = InitialTeb;
+    args[6].type          = API_ARG_TYPE_PTR;
     
-    tm.data.apiCall.args[7].arg.boolValue = CreateSuspended;
-    tm.data.apiCall.args[7].type         = API_ARG_TYPE_BOOL;
+    args[7].arg.boolValue = CreateSuspended;
+    args[7].type          = API_ARG_TYPE_BOOL;
+
+    // copy each component into buffer to form packet
+    memcpy(packet, &header, sizeof(header));
+    memcpy(packet, &apiHeader, sizeof(apiHeader));
+    memcpy(packet, &args, sizeof(args));
 
     DWORD dwBytesWritten;
-    WriteFile(hTelemetry, &tm, sizeof(tm), &dwBytesWritten, NULL);
+    WriteFile(hTelemetry, &packet, packetSize, &dwBytesWritten, NULL);
     return ((NTCREATETHREAD)HookList[HOOK_NT_CREATE_THREAD].originalFunc)(ThreadHandle, DesiredAccess, ObjectAttributes, ProcessHandle, ClientId, ThreadContext, InitialTeb, CreateSuspended);
 }
 
@@ -422,44 +505,53 @@ NTSTATUS NtCreateThreadEx_Handler(
     SIZE_T StackSize,
     SIZE_T MaximumStackSize,
     void* AttributeList) { // PPS_ATTRIBUTE_LIST
-    TELEMETRY tm;
-    GetHookBaseTelemetryPacket(&tm, "ntdll.dll", "NtCreateThreadEx");
+    size_t packetSize = GetTelemetryPacketSize(TM_TYPE_API_CALL, 11);
+    // raw buffer for dynamically sized packets
+    BYTE* packet = (BYTE*)malloc(packetSize);
+    TELEMETRY_HEADER header = GetTelemetryHeader(TM_TYPE_API_CALL, packetSize - sizeof(TELEMETRY_HEADER));
+    API_CALL_HEADER apiHeader = GetApiCallHeader("ntdll.dll", "NtCreateThreadEx", 11);
+
+    API_ARG args[11];
+    args[0].arg.ptrValue = ThreadHandle;
+    args[0].type         = API_ARG_TYPE_PTR;
+
+    args[1].arg.dwValue  = DesiredAccess;
+    args[1].type         = API_ARG_TYPE_DWORD;
     
-    tm.data.apiCall.args[0].arg.ptrValue = ThreadHandle;
-    tm.data.apiCall.args[0].type         = API_ARG_TYPE_PTR;
+    args[2].arg.ptrValue = (PVOID)ObjectAttributes;
+    args[2].type         = API_ARG_TYPE_PTR;
 
-    tm.data.apiCall.args[1].arg.dwValue  = DesiredAccess;
-    tm.data.apiCall.args[1].type         = API_ARG_TYPE_DWORD;
+    args[3].arg.ptrValue = ProcessHandle;
+    args[3].type         = API_ARG_TYPE_PTR;
     
-    tm.data.apiCall.args[2].arg.ptrValue = (PVOID)ObjectAttributes;
-    tm.data.apiCall.args[2].type         = API_ARG_TYPE_PTR;
+    args[4].arg.ptrValue = StartRoutine;
+    args[4].type         = API_ARG_TYPE_PTR;
 
-    tm.data.apiCall.args[3].arg.ptrValue = ProcessHandle;
-    tm.data.apiCall.args[3].type         = API_ARG_TYPE_PTR;
+    args[5].arg.ptrValue = Argument;
+    args[5].type         = API_ARG_TYPE_PTR;
+
+    args[6].arg.dwValue = CreateFlags;
+    args[6].type         = API_ARG_TYPE_DWORD;
     
-    tm.data.apiCall.args[4].arg.ptrValue = StartRoutine;
-    tm.data.apiCall.args[4].type         = API_ARG_TYPE_PTR;
+    args[7].arg.dwValue = ZeroBits;
+    args[7].type         = API_ARG_TYPE_DWORD;
 
-    tm.data.apiCall.args[5].arg.ptrValue = Argument;
-    tm.data.apiCall.args[5].type         = API_ARG_TYPE_PTR;
+    args[8].arg.dwValue = StackSize;
+    args[8].type         = API_ARG_TYPE_DWORD;
 
-    tm.data.apiCall.args[6].arg.dwValue = CreateFlags;
-    tm.data.apiCall.args[6].type         = API_ARG_TYPE_DWORD;
-    
-    tm.data.apiCall.args[7].arg.dwValue = ZeroBits;
-    tm.data.apiCall.args[7].type         = API_ARG_TYPE_DWORD;
+    args[9].arg.dwValue = MaximumStackSize;
+    args[9].type         = API_ARG_TYPE_DWORD;
 
-    tm.data.apiCall.args[8].arg.dwValue = StackSize;
-    tm.data.apiCall.args[8].type         = API_ARG_TYPE_DWORD;
+    args[10].arg.ptrValue = AttributeList;
+    args[10].type         = API_ARG_TYPE_PTR;
 
-    tm.data.apiCall.args[9].arg.dwValue = MaximumStackSize;
-    tm.data.apiCall.args[9].type         = API_ARG_TYPE_DWORD;
-
-    tm.data.apiCall.args[10].arg.ptrValue = AttributeList;
-    tm.data.apiCall.args[10].type         = API_ARG_TYPE_PTR;
+    // copy each component into buffer to form packet
+    memcpy(packet, &header, sizeof(header));
+    memcpy(packet, &apiHeader, sizeof(apiHeader));
+    memcpy(packet, &args, sizeof(args));
 
     DWORD dwBytesWritten;
-    WriteFile(hTelemetry, &tm, sizeof(tm), &dwBytesWritten, NULL);
+    WriteFile(hTelemetry, &packet, packetSize, &dwBytesWritten, NULL);
     return ((NTCREATETHREADEX)HookList[HOOK_NT_CREATE_THREAD_EX].originalFunc)(ThreadHandle, DesiredAccess, ObjectAttributes, ProcessHandle, StartRoutine, Argument, CreateFlags, ZeroBits, StackSize, MaximumStackSize, AttributeList);
 }
 /*
@@ -505,21 +597,29 @@ BOOL QueueUserAPC2_Handler(PAPCFUNC arg0, HANDLE arg1, ULONG_PTR arg2, QUEUE_USE
 }
 */
 HANDLE OpenProcess_Handler(DWORD access, BOOL inherit, DWORD pid) {
-    TELEMETRY tm;
-    GetHookBaseTelemetryPacket(&tm, "kernel32.dll", "OpenProcess");
-    FillEmptyArgs(&tm, 3);
+    size_t packetSize = GetTelemetryPacketSize(TM_TYPE_API_CALL, 3);
+    // raw buffer for dynamically sized packets
+    BYTE* packet = (BYTE*)malloc(packetSize);
+    TELEMETRY_HEADER header = GetTelemetryHeader(TM_TYPE_API_CALL, packetSize - sizeof(TELEMETRY_HEADER));
+    API_CALL_HEADER apiHeader = GetApiCallHeader("kernel32.dll", "OpenProcess", 3);
 
-    tm.data.apiCall.args[0].arg.dwValue = access;
-    tm.data.apiCall.args[0].type = API_ARG_TYPE_DWORD;
+    API_ARG args[3];
+    args[0].arg.dwValue = access;
+    args[0].type = API_ARG_TYPE_DWORD;
 
-    tm.data.apiCall.args[1].arg.boolValue = inherit;
-    tm.data.apiCall.args[1].type = API_ARG_TYPE_BOOL;
+    args[1].arg.boolValue = inherit;
+    args[1].type = API_ARG_TYPE_BOOL;
 
-    tm.data.apiCall.args[2].arg.dwValue = pid;
-    tm.data.apiCall.args[2].type = API_ARG_TYPE_DWORD;
+    args[2].arg.dwValue = pid;
+    args[2].type = API_ARG_TYPE_DWORD;
+
+    // copy each component into buffer to form packet
+    memcpy(packet, &header, sizeof(header));
+    memcpy(packet, &apiHeader, sizeof(apiHeader));
+    memcpy(packet, &args, sizeof(args));
 
     DWORD dwBytesWritten;
-    WriteFile(hTelemetry, &tm, sizeof(tm), &dwBytesWritten, NULL);
+    WriteFile(hTelemetry, &packet, packetSize, &dwBytesWritten, NULL);
     return ((OPENPROCESS)HookList[HOOK_OPEN_PROCESS].originalFunc)(access, inherit, pid);
 }
 
@@ -528,24 +628,32 @@ NTSTATUS NtOpenProcess_Handler(
     ACCESS_MASK DesiredAccess,
     PCOBJECT_ATTRIBUTES ObjectAttributes,
     PCLIENT_ID ClientId) {
-    TELEMETRY tm;
-    GetHookBaseTelemetryPacket(&tm, "ntdll.dll", "NtOpenProcess");
-    FillEmptyArgs(&tm, 4);
+    size_t packetSize = GetTelemetryPacketSize(TM_TYPE_API_CALL, 4);
+    // raw buffer for dynamically sized packets
+    BYTE* packet = (BYTE*)malloc(packetSize);
+    TELEMETRY_HEADER header = GetTelemetryHeader(TM_TYPE_API_CALL, packetSize - sizeof(TELEMETRY_HEADER));
+    API_CALL_HEADER apiHeader = GetApiCallHeader("ntdll.dll", "NtOpenProcess", 4);
 
-    tm.data.apiCall.args[0].arg.ptrValue = ProcessHandle;
-    tm.data.apiCall.args[0].type = API_ARG_TYPE_PTR;
+    API_ARG args[4];
+    args[0].arg.ptrValue = ProcessHandle;
+    args[0].type = API_ARG_TYPE_PTR;
 
-    tm.data.apiCall.args[1].arg.dwValue = DesiredAccess;
-    tm.data.apiCall.args[1].type = API_ARG_TYPE_DWORD;
+    args[1].arg.dwValue = DesiredAccess;
+    args[1].type = API_ARG_TYPE_DWORD;
     
-    tm.data.apiCall.args[2].arg.ptrValue = (PVOID)ObjectAttributes;
-    tm.data.apiCall.args[2].type = API_ARG_TYPE_PTR;
+    args[2].arg.ptrValue = (PVOID)ObjectAttributes;
+    args[2].type = API_ARG_TYPE_PTR;
     
-    tm.data.apiCall.args[3].arg.ptrValue = ClientId;
-    tm.data.apiCall.args[3].type = API_ARG_TYPE_PTR;
+    args[3].arg.ptrValue = ClientId;
+    args[3].type = API_ARG_TYPE_PTR;
+
+    // copy each component into buffer to form packet
+    memcpy(packet, &header, sizeof(header));
+    memcpy(packet, &apiHeader, sizeof(apiHeader));
+    memcpy(packet, &args, sizeof(args));
 
     DWORD dwBytesWritten;
-    WriteFile(hTelemetry, &tm, sizeof(tm), &dwBytesWritten, NULL);
+    WriteFile(hTelemetry, &packet, packetSize, &dwBytesWritten, NULL);
     return ((NTOPENPROCESS)HookList[HOOK_NT_OPEN_PROCESS].originalFunc)(ProcessHandle, DesiredAccess, ObjectAttributes, ClientId);
 }
 /*
@@ -566,24 +674,28 @@ BOOL SetThreadContext_Handler(HANDLE arg0, const CONTEXT arg1) {
 }
 */
 int MessageBoxA_Handler(HWND hWnd, LPCSTR caption, LPCSTR text, UINT type) {
-    TELEMETRY tm;
-    GetHookBaseTelemetryPacket(&tm, "user32.dll", "MessageBoxA");
-    FillEmptyArgs(&tm, 4);
+    size_t packetSize = GetTelemetryPacketSize(TM_TYPE_API_CALL, 4);
+    // raw buffer for dynamically sized packets
+    BYTE* packet = (BYTE*)malloc(packetSize);
+    TELEMETRY_HEADER header = GetTelemetryHeader(TM_TYPE_API_CALL, packetSize - sizeof(TELEMETRY_HEADER));
+    API_CALL_HEADER apiHeader = GetApiCallHeader("user32.dll", "MessageBoxA", 4);
     
-    tm.data.apiCall.args[0].arg.ptrValue = hWnd;
-    tm.data.apiCall.args[0].type = API_ARG_TYPE_PTR;
+    API_ARG args[4];
+    args[0].arg.ptrValue = hWnd;
+    args[0].type = API_ARG_TYPE_PTR;
 
     strncpy(tm.data.apiCall.args[1].arg.astrValue, caption, sizeof(tm.data.apiCall.args[1].arg.astrValue) -1);
-    tm.data.apiCall.args[1].arg.astrValue[sizeof(tm.data.apiCall.args[1].arg.astrValue)] = '\0';
-    tm.data.apiCall.args[1].type = API_ARG_TYPE_ASTRING;
+    args[1].arg.astrValue[sizeof(tm.data.apiCall.args[1].arg.astrValue)] = '\0';
+    args[1].type = API_ARG_TYPE_ASTRING;
     
     strncpy(tm.data.apiCall.args[2].arg.astrValue, text, sizeof(tm.data.apiCall.args[2].arg.astrValue) -1);
-    tm.data.apiCall.args[2].arg.astrValue[sizeof(tm.data.apiCall.args[2].arg.astrValue)] = '\0';
-    tm.data.apiCall.args[2].type = API_ARG_TYPE_ASTRING;
+    args[2].arg.astrValue[sizeof(tm.data.apiCall.args[2].arg.astrValue)] = '\0';
+    args[2].type = API_ARG_TYPE_ASTRING;
     
-    tm.data.apiCall.args[3].arg.dwValue = type;
-    tm.data.apiCall.args[3].type = API_ARG_TYPE_DWORD;
+    args[3].arg.dwValue = type;
+    args[3].type = API_ARG_TYPE_DWORD;
 
+    // debug prints
     fprintf(stderr, "full packet size: %d\nsizeof data: %d\nsizeof header: %d\n", sizeof(tm), sizeof(tm.data), sizeof(tm.header));
     fprintf(stderr, "MessageBox hook\n\tHEADER\n\t\tpid: 0x%08X\n\t\ttype: 0x%08X\n\t\ttimestamp: 0x%X\n", tm.header.pid, tm.header.type, tm.header.timeStamp);
     fprintf(stderr, "\tDATA\n\t\ttid: 0x%08X\n\t\tdllName: %s\n\t\tfuncName: %s\n", tm.data.apiCall.tid, tm.data.apiCall.dllName, tm.data.apiCall.funcName);
@@ -592,8 +704,13 @@ int MessageBoxA_Handler(HWND hWnd, LPCSTR caption, LPCSTR text, UINT type) {
     fprintf(stderr, "\n\t\tARG 2\n\t\ttype: 0x%08X\n\t\tANSI value: %s\n", tm.data.apiCall.args[2].type, tm.data.apiCall.args[2].arg.astrValue);
     fprintf(stderr, "\n\t\tARG 3\n\t\ttype: 0x%08X\n\t\tDWORD value: 0x%08X\n", tm.data.apiCall.args[3].type, tm.data.apiCall.args[3].arg.dwValue);
 
+    // copy each component into buffer to form packet
+    memcpy(packet, &header, sizeof(header));
+    memcpy(packet, &apiHeader, sizeof(apiHeader));
+    memcpy(packet, &args, sizeof(args));
+
     DWORD dwBytesWritten;
-    WriteFile(hTelemetry, &tm, sizeof(tm), &dwBytesWritten, NULL);
+    WriteFile(hTelemetry, &packet, packetSize, &dwBytesWritten, NULL);
     return ((MESSAGEBOXA)HookList[HOOK_MESSAGE_BOX_A].originalFunc)(hWnd, "Hooked!", "Hooked!", type);
 }
 /*
