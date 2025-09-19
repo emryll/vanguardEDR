@@ -1,66 +1,53 @@
 package main
 
-//TODO: read from external json file
-var apiPatterns = []ApiPattern{
-	{Name: "Classic process injection (kernel32)",
-		ApiCalls:  []string{"OpenProcess", "VirtualAlloc", "WriteProcessMemory", "CreateRemoteThread"},
-		TimeRange: 30},
-	{Name: "Classic process injection (ntdll)",
-	},
-	{Name: "Token impersonation (privesc)",
-	},
-	{Name: "Classic DLL injection (kernel32)",
-	},
-	{Name: "Classic DLL injection (ntdll)",
-	},
-}
+import (
+	"time"
+)
 
-//TODO: read from external json file
-var filePatterns = []FilePattern{
-	{ Name: "",},
-}
+// TODO: read from external json file
+var (
+	apiPatterns  []ApiPattern
+	filePatterns []FilePattern
+	regPatterns  []RegPattern
+)
 
-//TODO: read from external json file
-var regPatterns = []RegPattern {
-	{Name: "",},
-}
 
-// returns names of each pattern match
-func (p *Process) CheckApiPatterns() []Result {
-	var matches []Result
+// returns names of each pattern match and adds them to pattern match history of process
+func (p *Process) CheckApiPatterns() Result {
+	var matches Result
 	for _, pattern := range apiPatterns {
-		var (
-			match = false
-			matchResult PatternResult
-			startTimes []int64
+		var ( // describe current pattern
+			match       = false
+			startTimes  []int64
 		)
-		// iterate each component of pattern 
+		//* iterate each component of pattern
 		for i, call := range pattern.ApiCalls {
-			// check each possible func for that component //TODO: use bitwise &
+			//* check each possible func for that component //TODO: use bitwise & and ids
 			for _, fn := range call.Funcs {
 				//TODO: make timerange check seperate function so its not so ugly
+				//* does it exist in api call history?
 				api, exists := p.APICalls[fn]
 				if !exists { // not a match, move on to next one
 					match = false
 					continue
 				}
 				//* check if its within timeframe
-				if i == 0 { //save timeframes for first part of pattern
-					startTimes = append(startTimes, p.APICalls[fn].TimeStamp)
-					for _, oldCall := range p.APICalls[fn].Others {
+				if i == 0 { //save possible timeframes for first component of pattern
+					startTimes = append(startTimes, api.TimeStamp)
+					for _, oldCall := range api.History {
 						startTimes = append(startTimes, oldCall.TimeStamp)
 					}
 				} else {
 					for i, start := range startTimes {
 						found := false
 						// Check if latest call is within specified timerange
-						if start - p.APICalls[fn].TimeStamp <= pattern.TimeRange {
+						if start-api.TimeStamp <= int64(pattern.TimeRange) {
 							found = true
 							continue
 						}
 						// Check older calls
-						for _, oldCall := range p.APICalls[fn].Others {
-							if start - oldCall.TimeStamp <= pattern.TimeRange {
+						for _, oldCall := range api.History {
+							if start-oldCall.TimeStamp <= int64(pattern.TimeRange) {
 								found = true
 								break
 							}
@@ -73,34 +60,55 @@ func (p *Process) CheckApiPatterns() []Result {
 				match = true
 				break
 			}
-			if !match { // if one of calls is missing, pattern does not match
+			if !match { // if one of components is missing, pattern does not match
 				break
 			}
 		}
 		if match {
-			matchResult.TimeStamp = time.Now().Unix()
-			matchResult.Severity = pattern.Severity
-			matchResult.Name = pattern.Name
-			matches.TotalScore += matchResult.TotalScore
-			p.TotalScore += matchResult.TotalScore
+			matchResult := StdResult{
+				Name: pattern.Name,
+				Description: pattern.Description,
+				TimeStamp: time.Now().Unix(),
+				Severity: pattern.Severity,
+				Score: pattern.Score,
+				Category: pattern.Category,
+			}
+			if matchResult.Name == "" { // make sure name has a value, to not mess up logic
+				if matchResult.Description != "" {
+					matchResult.Name = matchResult.Description
+				} else { // fallback, use first api as name
+					matchResult.Name = pattern.ApiCalls[0].Funcs[0]
+				}
+			}
+			matches.TotalScore += matchResult.Score
 			matches.Results = append(matches.Results, matchResult)
+			
 			// check if pattern match already registered, add if not
 			value, exists := p.PatternMatches[matchResult.Name]
 			if exists {
-				if matchResult.TimeStamp - value.TimeStamp <= TM_HISTORY_CLEANUP_INTERVAL {
+				// check if it was just added, in order to avoid duplicates
+				if matchResult.TimeStamp-value.TimeStamp <= TM_HISTORY_CLEANUP_INTERVAL {
 					continue
 				}
-				value.Count++
-				value.TimeStamp = matchResult.TimeStamp
+				//? value is a copy, thats why it cant be used
+				mu.Lock()
+				p.PatternMatches[matchResult.Name].Count++
+				p.PatternMatches[matchResult.Name].TimeStamp = matchResult.TimeStamp
+				mu.Unlock()
 			} else {
-				p.PatternMatches[matchResult.Name] = matchResult
+				mu.Lock()
+				p.PatternMatches[matchResult.Name] = &matchResult
+				//? should you increment score on duplicates or not? be consistent
+				p.TotalScore += matchResult.Score
+				mu.Unlock()
 			}
 		}
 	}
-	p.PatternMatches = append(p.PatternMatches, matches...)
 	return matches
 }
 
+//TODO:
+/*
 func (p *Process) CheckFileBehaviorPatterns() Result {
 	var results Result
 	for _, pattern := range filePatterns {
@@ -118,35 +126,7 @@ func (p *Process) CheckFileBehaviorPatterns() Result {
 			p.PatternMatches[pattern.Name] = match
 		} else {
 			// avoid registering same behavior events multiple times
-			if match.TimeStamp - entry.TimeStamp <= TM_HISTORY_CLEANUP_INTERVAL {
-				continue
-			}
-			entry.TimeStamp = match.TimeStamp
-			entry.Count++;
-		}
-		results.TotalScore += match.Severity
-		results.Results = append(results.Results, match)
-	}
-	return results
-}
-
-func (p *Process) CheckRegBehaviorPatterns() Result {
-	var results Result
-	for _, pattern := range regPatterns {
-		event, exists := p.RegEvents[pattern.Name]
-		if !exists { // current pattern does not match
-			continue
-		}
-		var match PatternResult
-		match.Name = pattern.NameapiPatterns
-		match.Severity = pattern.Severity
-		match.TimeStamp = time.Now().Unix()
-		match.Count = 0
-		entry, exists := p.PatternMatches[pattern.Name]
-		if !exists {
-			p.PatternMatches[pattern.Name] = match
-		} else {
-			if match.TimeStamp - entry.TimeStamp <= TM_HISTORY_CLEANUP_INTERVAL {
+			if match.TimeStamp-entry.TimeStamp <= TM_HISTORY_CLEANUP_INTERVAL {
 				continue
 			}
 			entry.TimeStamp = match.TimeStamp
@@ -156,11 +136,43 @@ func (p *Process) CheckRegBehaviorPatterns() Result {
 		results.Results = append(results.Results, match)
 	}
 	return results
-}
+}*/
 
+//TODO: 
+/*
+func (p *Process) CheckRegBehaviorPatterns() Result {
+	var results Result
+	for _, pattern := range regPatterns {
+		event, exists := p.RegEvents[pattern.Name]
+		if !exists { // current pattern does not match
+			continue
+		}
+		var match StdResult
+		match.Name 		  = pattern.Name
+		match.Description = pattern.Description
+		match.Severity 	  = pattern.Severity
+		match.TimeStamp   = time.Now().Unix()
+		match.Count 	  = 0
+		entry, exists := p.PatternMatches[pattern.Name]
+		if !exists {
+			p.PatternMatches[pattern.Name] = match
+		} else {
+			if match.TimeStamp-entry.TimeStamp <= TM_HISTORY_CLEANUP_INTERVAL {
+				continue
+			}
+			entry.TimeStamp = match.TimeStamp
+			entry.Count++
+		}
+		results.TotalScore += match.Severity
+		results.Results = append(results.Results, match)
+	}
+	return results
+}*/
+
+// handle all cleaning of telemetry history, concurrently w/ worker pool of 10 goroutines
 func HistoryCleaner(wg *sync.WaitGroup, terminate chan struct{}) {
 	defer wg.Done()
-	cleanup := time.NewTicker(time.Duration(TM_HISTORY_CLEANUP_INTERVAL)*time.Second)
+	cleanup := time.NewTicker(time.Duration(TM_HISTORY_CLEANUP_INTERVAL) * time.Second)
 	defer cleanup.Stop()
 
 	tasks := make(chan *Process)
@@ -171,7 +183,7 @@ func HistoryCleaner(wg *sync.WaitGroup, terminate chan struct{}) {
 			go HistoryCleanup(wg, tasks)
 		}
 	}()
-	for { 
+	for {
 		select {
 		case <-terminate:
 			close(tasks)
@@ -184,14 +196,15 @@ func HistoryCleaner(wg *sync.WaitGroup, terminate chan struct{}) {
 	}
 }
 
-func HistoryCleanup(wg *sync.WaitGroup, tasks chan *Process)
+// worker function for history cleanup mechanism
+func HistoryCleanup(wg *sync.WaitGroup, tasks chan *Process) {
 	defer wg.Done()
 	for {
 		select {
-		case task := <-tasks {
+		case task := <-tasks:
 			threshold := time.Now().Unix() - TM_HISTORY_CLEANUP_INTERVAL
 			for _, fn := range task.APICalls {
-				Cleanup(fn.History, threshold)
+				Cleanup(fn.History, threshold) // utils.go
 			}
 			/*threshold := time.Now().Unix() - TM_HISTORY_CLEANUP_INTERVAL
 			for _, v := range task.FileEvents{
@@ -200,7 +213,8 @@ func HistoryCleanup(wg *sync.WaitGroup, tasks chan *Process)
 			threshold := time.Now().Unix() - TM_HISTORY_CLEANUP_INTERVAL
 			for _, v := range task.RegEvents {
 				Cleanup(v, threshold)
-			}*/
+			}*/ /*
 		}
 	}
 }
+

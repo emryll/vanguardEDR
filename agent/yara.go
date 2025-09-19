@@ -1,5 +1,7 @@
 package main
 
+//#include <windows.h>
+//#include <stdlib.h>
 //#include "memscan.h"
 import "C"
 
@@ -8,9 +10,10 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 	"unsafe"
 
-	yara "github.com/VirusTotal/yara-x"
+	yara "github.com/VirusTotal/yara-x/go"
 	"github.com/fatih/color"
 	"golang.org/x/sys/windows"
 )
@@ -147,98 +150,149 @@ func ScanMainModuleText(hProcess windows.Handle, scanner *yara.Scanner) ([]StdRe
 	return getResultsFromRules(m), nil
 }
 
-func BasicMemoryScan(pid uint32, scanner *yara.Scanner) ([]StdResult, error) {
-	fmt.Printf("\n[i] Performing basic memory scan on process %d...\n", pid)
+// Scans RWX memory and main module's .text section of a specified process.
+// This function returns the Results and the caller is responsible for adding them to history
+func BasicMemoryScan(pid uint32, scanner *yara.Scanner) (Result, error) {
+	now := time.Now()
+	ftime := now.Format("15:04:05")
+	info := fmt.Sprintf("\n[%s] Performing basic memory scan on process %d...\n", ftime, pid)
+	logFile.WriteString(info)
+	if printLog {
+		fmt.Printf(info)
+	}
+
 	hProcess, err := windows.OpenProcess(windows.PROCESS_QUERY_INFORMATION|windows.PROCESS_VM_READ, false, pid)
 	if err != nil {
-		return nil, fmt.Errorf("Failed to open process: %v", err)
-	}
-	defer windows.CloseHandle(hProcess)
-
-	var results []StdResult
-	rwxResults, err := ScanRWXMemory(hProcess, scanner)
-	if err != nil {
-		color.Red("\n[ERROR] Failed to scan RWX memory of process %d: %v", pid, err)
-	} else {
-		fmt.Printf("\n[*] Scanned RWX memory of process %d\n", pid)
-		results = append(results, rwxResults...)
-	}
-	textResults, err := ScanMainModuleText(hProcess, scanner)
-	if err != nil {
-		color.Red("\n[ERROR] Failed to scan main module's .text section of process %d: %v", pid, err)
-	} else {
-		fmt.Printf("\n[*] Scanned main module's .text section of process %d\n", pid)
-		results = append(results, textResults...)
-	}
-	return results, nil
-}
-
-func MemoryScanEx(pid uint32, scanner *yara.Scanner) ([]StdResult, error) {
-	fmt.Printf("\n[i] Performing full memory scan on process %d...\n", pid)
-	hProcess, err := windows.OpenProcess(windows.PROCESS_QUERY_INFORMATION|windows.PROCESS_VM_READ, false, pid)
-	if err != nil {
-		return nil, fmt.Errorf("Failed to open process: %v", err)
+		return Result{}, fmt.Errorf("Failed to open process: %v", err)
 	}
 	defer windows.CloseHandle(hProcess)
 
 	var (
-		results    []StdResult
+		results     Result
+		failtracker = 0
+	)
+	rwxResults, rwxErr := ScanRWXMemory(hProcess, scanner)
+	if rwxErr != nil {
+		failtracker++
+	} else {
+		if printLog {
+			fmt.Printf("\n[*] Scanned RWX memory of process %d\n", pid)
+		}
+		results.Results = append(results.Results, rwxResults...)
+		results.TotalScore += results.Results[len(results.Results)-1].Score
+	}
+	textResults, textErr := ScanMainModuleText(hProcess, scanner)
+	if textErr != nil {
+		failtracker += 2
+	} else {
+		if printLog {
+			fmt.Printf("\n[*] Scanned main module's .text section of process %d\n", pid)
+		}
+		results.Results = append(results.Results, textResults...)
+		results.TotalScore += results.Results[len(results.Results)-1].Score
+	}
+
+	//TODO: add to process history
+
+	switch failtracker {
+	case 1:
+		return results, fmt.Errorf("Failed to scan RWX memory of process %d: %v", pid, rwxErr)
+	case 2:
+		return results, fmt.Errorf("Failed to scan main module's text section of process %d: %v", pid, textErr)
+	case 3:
+		return results, fmt.Errorf("Failed to scan both RWX memory and main module's text section of process %d: %v\n\t\\==={ RWX scan error: %v\n\t \\=={ .text scan error: %v\n", pid, rwxErr, textErr)
+	}
+	return results, nil
+}
+
+// TODO update logging
+func MemoryScanEx(pid uint32, scanner *yara.Scanner) (Result, error) {
+	fmt.Printf("\n[i] Performing full memory scan on process %d...\n", pid)
+	hProcess, err := windows.OpenProcess(windows.PROCESS_QUERY_INFORMATION|windows.PROCESS_VM_READ, false, pid)
+	if err != nil {
+		return Result{}, fmt.Errorf("Failed to open process: %v", err)
+	}
+	defer windows.CloseHandle(hProcess)
+
+	var (
+		results    Result
 		numModules C.size_t
 	)
 	mods := C.GetAllSectionsOfProcess(C.HANDLE(unsafe.Pointer(hProcess)), &numModules)
 	if mods == nil || numModules == 0 {
 		color.Red("[ERROR] Failed to get sections of process %d", pid)
-		return nil, fmt.Errorf("Failed to get sections")
+		return Result{}, fmt.Errorf("Failed to get sections")
 	}
-	// turn into go struct slice
 	defer C.FreeRemoteModuleArray(mods, numModules)
+	// turn into go struct slice
 	//modules := unsafe.Slice((*RemoteModule)(unsafe.Pointer(mods)), int(numModules))
 	modules, err := ConvertRemoteModules(mods, numModules)
 	if err != nil {
-		return nil, err
+		return Result{}, err
 	}
 
 	for _, module := range modules {
-		fmt.Printf("[i] Scanning %s...\n", module.GetName())
-		fmt.Printf("len sections: %d (%d)\n", len(module.Sections), module.NumSections)
+		info := fmt.Sprintf("[i] Scanning %s...\n", module.GetName())
+		if printLog {
+			fmt.Printf(info)
+		}
+		logFile.WriteString(info)
+
 		for i := 0; i < int(module.NumSections); i++ {
-			fmt.Printf("section %d size: %d (0x%p)\n", i, module.Sections[i].Size, module.Sections[i].Address)
+			//TODO: add limits to section size, so you wont read arbitrary size and crash (oom)
+			info := fmt.Sprintf("\tsection %d size: %d (0x%p)\n", i, module.Sections[i].Size, module.Sections[i].Address)
+			if printLog {
+				fmt.Printf(info)
+			}
+			logFile.WriteString(info)
+
 			buf, err := ReadRemoteProcessMem(hProcess, uintptr(module.Sections[i].Address), int(module.Sections[i].Size))
 			if err != nil {
-				color.Red("[!] Failed to read section at 0x%p within process %d: %v", module.Sections[i].Address, pid, err)
+				errMsg := fmt.Sprintf("\n[!] Failed to read section at 0x%p within process %d: %v", module.Sections[i].Address, pid, err)
+				if printLog {
+					color.Red(errMsg)
+				}
+				logFile.WriteString(errMsg)
 				continue
 			}
 			result, err := scanner.Scan(buf)
 			if err != nil {
-				color.Red("[!] Failed to scan buffer of memory(%dB): %v", len(buf), err)
+				errMsg := fmt.Sprintf("[!] Failed to scan buffer of memory(%dB): %v", len(buf), err)
+				if printLog {
+					color.Red(errMsg)
+				}
+				logFile.WriteString(errMsg)
 				continue
 			}
-			m := result.MatchingRules()
-			results = append(results, getResultsFromRules(m)...)
+			results.Results = append(results.Results, getResultsFromRules(result.MatchingRules())...)
+			results.TotalScore += results.Results[len(results.Results)-1].Score
+
+			//TODO: add to process history
 		}
 	}
 	return results, nil
 }
 
-func FullMemoryScan(pid uint32, scanner *yara.Scanner) ([]StdResult, error) {
+// TODO: update logging
+func FullMemoryScan(pid uint32, scanner *yara.Scanner) (Result, error) {
 	fmt.Printf("\n[i] Performing full memory scan on process %d...\n", pid)
 	hProcess, err := windows.OpenProcess(windows.PROCESS_QUERY_INFORMATION|windows.PROCESS_VM_READ, false, pid)
 	if err != nil {
-		return nil, fmt.Errorf("Failed to open process: %v", err)
+		return Result{}, fmt.Errorf("Failed to open process: %v", err)
 	}
 	defer windows.CloseHandle(hProcess)
 
 	var (
-		results    []StdResult
+		results    Result
 		numRegions C.size_t
 	)
 	cregions := C.GetAllMemoryRegions(C.HANDLE(unsafe.Pointer(hProcess)), &numRegions)
 	if cregions == nil || numRegions == 0 {
-		return nil, fmt.Errorf("Failed to get memory regions of process: %v", windows.GetLastError())
+		return Result{}, fmt.Errorf("Failed to get memory regions of process: %v", windows.GetLastError())
 	}
 	regions := unsafe.Slice((*MemRegion)(unsafe.Pointer(cregions)), int(numRegions))
 
-	for i, region := range regions {
+	for _, region := range regions {
 		buf, err := ReadRemoteProcessMem(hProcess, uintptr(region.Address), int(region.Size))
 		if err != nil {
 			color.Red("[!] Failed to read memory region at 0x%p: %v", region.Address, err)
@@ -249,7 +303,9 @@ func FullMemoryScan(pid uint32, scanner *yara.Scanner) ([]StdResult, error) {
 			color.Red("[!] Failed to scan buffer (%dB): %v", len(buf), err)
 			continue
 		}
-		results = append(results, getResultsFromRules(result.MatchingRules())...)
+		results.Results = append(results.Results, getResultsFromRules(result.MatchingRules())...)
+		results.TotalScore += results.Results[len(results.Results)-1].Score
+		//TODO: add to process history
 	}
 	C.free(unsafe.Pointer(cregions))
 	return results, nil
