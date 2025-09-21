@@ -77,20 +77,19 @@ func GetProcessExecutable(pid uint32) (string, error) {
 	return windows.UTF16ToString(buf[:size]), nil
 }
 
-// TODO: test
-// remove all items in history which are older than timestamp threshold
-func Cleanup[T any, H History[T]](history []H, threshold int64) []H {
+// remove all items in history which are < threshold
+func Cleanup[H History](history []H, threshold int64) []H {
 	// sort history in ascending order
 	sort.Slice(history, func(i, j int) bool {
 		return history[i].GetTime() < history[j].GetTime()
 	})
 	// find last item below or equal to timestamp threshold
-	index := binarySearchBelow(history, threshold)
+	index := binarySearchExpired(history, threshold)
 	return history[index:]
 }
 
-// find last item <= threshold
-func binarySearchBelow[T any, H History[T]](history []H, threshold int64) int {
+// find first index where timestamp > threshold
+func binarySearchExpired[H History](history []H, threshold int64) int {
 	left, right := 0, len(history)-1
 	for left <= right {
 		mid := left + (right-left)/2
