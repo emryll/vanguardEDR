@@ -11,14 +11,13 @@ var (
 	regPatterns  []RegPattern
 )
 
-
 // returns names of each pattern match and adds them to pattern match history of process
 func (p *Process) CheckApiPatterns() Result {
 	var matches Result
 	for _, pattern := range apiPatterns {
 		var ( // describe current pattern
-			match       = false
-			startTimes  []int64
+			match      = false
+			startTimes []int64
 		)
 		//* iterate each component of pattern
 		for i, call := range pattern.ApiCalls {
@@ -66,12 +65,12 @@ func (p *Process) CheckApiPatterns() Result {
 		}
 		if match {
 			matchResult := StdResult{
-				Name: pattern.Name,
+				Name:        pattern.Name,
 				Description: pattern.Description,
-				TimeStamp: time.Now().Unix(),
-				Severity: pattern.Severity,
-				Score: pattern.Score,
-				Category: pattern.Category,
+				TimeStamp:   time.Now().Unix(),
+				Severity:    pattern.Severity,
+				Score:       pattern.Score,
+				Category:    pattern.Category,
 			}
 			if matchResult.Name == "" { // make sure name has a value, to not mess up logic
 				if matchResult.Description != "" {
@@ -82,7 +81,7 @@ func (p *Process) CheckApiPatterns() Result {
 			}
 			matches.TotalScore += matchResult.Score
 			matches.Results = append(matches.Results, matchResult)
-			
+
 			// check if pattern match already registered, add if not
 			value, exists := p.PatternMatches[matchResult.Name]
 			if exists {
@@ -138,7 +137,7 @@ func (p *Process) CheckFileBehaviorPatterns() Result {
 	return results
 }*/
 
-//TODO: 
+//TODO:
 /*
 func (p *Process) CheckRegBehaviorPatterns() Result {
 	var results Result
@@ -165,8 +164,7 @@ func (p *Process) CheckRegBehaviorPatterns() Result {
 		}
 		results.TotalScore += match.Severity
 		results.Results = append(results.Results, match)
-	}
-	return results
+	} return results
 }*/
 
 // handle all cleaning of telemetry history, concurrently w/ worker pool of 10 goroutines
@@ -189,8 +187,8 @@ func HistoryCleaner(wg *sync.WaitGroup, terminate chan struct{}) {
 			close(tasks)
 			return
 		case <-cleanup.C:
-			for pid, process := range processes {
-				tasks <- &process
+			for _, process := range processes {
+				tasks <- process
 			}
 		}
 	}
@@ -203,8 +201,13 @@ func HistoryCleanup(wg *sync.WaitGroup, tasks chan *Process) {
 		select {
 		case task := <-tasks:
 			threshold := time.Now().Unix() - TM_HISTORY_CLEANUP_INTERVAL
+			// fn is a copy. in the future make these entries *ApiCallData
 			for _, fn := range task.APICalls {
-				Cleanup(fn.History, threshold) // utils.go
+				newHistory := Cleanup(fn.History, threshold) // utils.go
+				fn.History = newHistory
+				task.ApiMu.Lock()
+				task.APICalls[fn.FuncName] = fn
+				task.ApiMu.Unlock()
 			}
 			/*threshold := time.Now().Unix() - TM_HISTORY_CLEANUP_INTERVAL
 			for _, v := range task.FileEvents{
@@ -213,8 +216,7 @@ func HistoryCleanup(wg *sync.WaitGroup, tasks chan *Process) {
 			threshold := time.Now().Unix() - TM_HISTORY_CLEANUP_INTERVAL
 			for _, v := range task.RegEvents {
 				Cleanup(v, threshold)
-			}*/ /*
+			}*/
 		}
 	}
 }
-

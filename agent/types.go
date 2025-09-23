@@ -2,12 +2,14 @@ package main
 
 import (
 	"bytes"
+	"sync"
 	"unsafe"
 )
 
 type Process struct {
 	Path     string
 	IsSigned bool
+	ApiMu    sync.Mutex
 	// this is collected telemetry data history
 	APICalls   map[string]ApiCallData   // key: api call name
 	FileEvents map[string]FileEventData // key: filepath
