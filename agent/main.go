@@ -1,7 +1,9 @@
 package main
 
 import (
+	"fmt"
 	"os"
+	"strings"
 	"sync"
 	"time"
 
@@ -131,5 +133,46 @@ func main() {
 	//go commandListener(&wg) //TODO add terminate
 	go PeriodicScanScheduler(&wg, terminate)
 	//go HistoryCleaner(&wg, terminate)
+
+	//TODO: banner print
+
+	//TODO: cli loop
+	for {
+		var input string
+		fmt.Printf(" $ ")
+		fmt.Scanln(&input)
+		args := strings.Split(input, " ")
+
+		switch strings.ToLower(args[0]) {
+		case "exit", "quit", "q":
+			//TODO: trigger terminate signal
+			break
+		case "demo":
+			if len(args) < 2 {
+				color.Red("Not enough args!")
+				fmt.Println("Usage: demo <path>")
+				continue
+			}
+		case "scan":
+			if len(args) < 3 {
+				color.Red("Not enough args!")
+				fmt.Println("Usage: scan <static|memory> <path|pid> [type]")
+				continue
+			}
+			switch args[1] {
+			case "static", "s":
+				StaticScan(args[2], true)
+			case "memory", "mem", "m":
+				if len(args) > 3 {
+					switch args[3] {
+					case "basic":
+					case "full":
+					case "module":
+					}
+				}
+				//TODO: memory scan
+			}
+		}
+	}
 	wg.Wait()
 }

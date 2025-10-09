@@ -150,7 +150,7 @@ func (header TelemetryHeader) Log(dataBuf []byte) {
 					if printLog {
 						color.Red(errMsg)
 					} else if results.TotalScore > 0 {
-						go results.Log("MemoryScanEx", header.Pid) // goroutine to not block execution, self-explanatory func
+						go results.Log("MemoryScanEx", int(header.Pid)) // goroutine to not block execution, self-explanatory func
 					}
 				}
 			}()
@@ -171,21 +171,21 @@ func (header TelemetryHeader) Log(dataBuf []byte) {
 }
 
 // Process and log results. Launch further actions or alerts if needed
-func (r Results) Log(scanName string, pid int) {
+func (r Result) Log(scanName string, pid int) {
 	head := fmt.Sprintf("\n\nGot %d total score from %s (%d matches)\n", r.TotalScore, scanName, len(r.Matches))
 	logFile.WriteString(head)
 	if printLog {
 		fmt.Printf(head)
 	}
 
-	mu.Lock()
+	processes[pid].ScoreMu.Lock()
 	processes[pid].YaraScore += r.TotalScore
 	processes[pid].TotalScore += r.TotalScore
-	mu.Unlock()
+	processes[pid].ScoreMu.Unlock()
 	//TODO: check if score exceeds thresholds, make a function for this
 
 	//TODO: if m.Severity is severe, trigger an alert
-	for _, m := range r.Matches {
+	for _, m := range r.Results {
 		t := time.Unix(m.TimeStamp, 0)
 		formatted := t.Format("15:04:05")
 
