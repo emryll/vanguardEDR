@@ -484,11 +484,11 @@ func readMotwZoneId(path string) (int, error) {
 		lines  []string
 		zoneId int
 	)
-	scanner := bufio.NewScanner(file)
-	for scanner.Scan() {
-		lines = append(lines, scanner.Text())
+	reader := bufio.NewScanner(file)
+	for reader.Scan() {
+		lines = append(lines, reader.Text())
 	}
-	if err = scanner.Err(); err != nil {
+	if err = reader.Err(); err != nil {
 		return 0, err
 	}
 

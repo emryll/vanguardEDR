@@ -1,39 +1,62 @@
 package main
 
+//#include "memscan.h"
+import "C"
+
 import (
   "fmt"
   "strings"
   "github.com/fatih/color"
 )
 
+// list of available commands, for the help command
+var cliCommands = []CliCommand{
+  {"help", "Print info about available commands"},
+  {"exit|quit", "Shut down the entire program (not just CLI)"},
+  {"scan <static|memory> <pid> [type]", "Manually launch a scan on a specified target. Static scan can be given a file or process. Memory scan only accepts a PID."},
+  {"query <pid> [type]", "Query different types of information about a specified (tracked) process."},
+  {"launch|demo <path>", "Manually create a process to be tracked. For demo-purposes pre-callbacks."},
+  {"inject|track|attach <pid>", "Start tracking an already running (untracked) process"},
+}
+
+func cli_help() {
+  //TODO make the print prettier
+  for _, cmd := range cliCommands {
+    fmt.Printf("%s - %s\n")
+  }
+}
+
 // Handle a single command. Take input, parse it, and act on it
 // You can launch demo, inject, query info or start scan
 func cli_parse(tokens string) {
   switch strings.ToLower(tokens[0]) {
   case "help":
-    //TODO print help
+    cli_help()
+    
   case "exit", "quit", "q":
-    //TODO trigger terminate signal
+    // trigger terminate signal for all routines
+    close(terminate)
     break
+
   case "scan", "s":
   // scan <static|memory> <pid> [type]
     if len(tokens) < 3 {
       color.Red("\n[!] Not enough args!")
       fmt.Printf("\tUsage: %s <static|memory> <pid> [type]\n", tokens[0])
     }
-    type := ""
+    scantype := ""
     if len(tokens) > 3 {
-      type = tokens[3]
+      scantype = tokens[3]
     }
 
-    cli_scan(tokens[1], type, tokens[2])
+    cli_scan(tokens[1], scantype, tokens[2])
 
   case "query", "get":
   // process info, alerts, telemetry, api history
   // query <pid> [type]
     if len(tokens) < 2 {
       color.Red("\n[!] Not enough args!")
-      fmt.Printf("\tUsage: %s <pid> [type]\n" tokens[0])
+      fmt.Printf("\tUsage: %s <pid> [type]\n", tokens[0])
       return
     }
     pid, err := strconv.Atoi(tokens[1])
@@ -43,12 +66,12 @@ func cli_parse(tokens string) {
       return
     }
 
-    type := ""
+    querytype := ""
     if len(tokens) > 2 {
-      type = tokens[2]
+      querytype = tokens[2]
     }
 
-    cli_query(pid, type)
+    cli_query(pid, querytype)
 
   case "launch", "demo":
     if len(tokens) < 2 {
@@ -82,7 +105,7 @@ func cli_parse(tokens string) {
       return
     }
 
-    InjectDll(pid)
+    C.InjectDll(C.DWORD(pid))
 
     //* Register process
     path, err := GetProcessExecutable(uint32(pid))
@@ -103,25 +126,40 @@ func cli_parse(tokens string) {
 //? handle it. Outside of this, arg count will be
 //? validated, but all other error checks happen within this.
 
-func cli_scan[T string|int](scan string, type string, target T) error {
+func cli_scan[T string|int](scan string, scantype string, target T) error {
   switch scan {
   case "static", "s":
-    //TODO check if target is string or int
-  case "memory", "mem", "m":
-    switch type {
-    case "basic":
+      StaticScan(target, true)
 
+  case "memory", "mem", "m":
+    switch scantype {
+    case "basic":
+      result, err := BasicMemoryScan(uint32(target), scanner)
+      if err != nil {
+        color.Red("\n[!] Failed to perform basic memory scan on process %d!", target)
+        fmt.Errorf("\tError: %v\n", err)
+        return nil // i am only returning errors which are due to improper commandline
+      }
+      result.Log("basic memory scan", target)
+      
     case "full":
+      result, err := FullMemoryScan(uint32(target), scanner)
+      if err != nil {
+        color.Red("\n[!] Failed to perform full memory scan on process %d!", target)
+        fmt.Errorf("\tError: %v\n", err)
+        return nil // i am only returning errors which are due to improper commandline
+      }
+      result.Log("full memory scan", target)
 
     default:
-      return fmt.Errorf("Unknown memory scan type: \"%s\"", type)
+      return fmt.Errorf("Unknown memory scan type: \"%s\"", scantype)
     }
   default:
     return fmt.Errorf("Unknown scan type: %s", scan)
   }
 }
 
-func cli_query(pid int, type string) error {
+func cli_query(pid int, querytype string) error {
   // basic: cert + exe, score
   // api calls
   // patterns
@@ -132,7 +170,7 @@ func cli_query(pid int, type string) error {
     }
   }
 
-  switch type {
+  switch querytype {
   case "basic", "info", "": // print basic info
     entry.PrintBasic()
   case "api", "calls": // print tracked api calls that were used
@@ -183,12 +221,12 @@ func cli_launch(cmdLine string) error {
     return err
   }
 
-  err = InjectDll(pi.ProcessId)
-  if err != nil {
+  r := InjectDll(pi.ProcessId)
+  if r != 0 {
     windows.CloseHandle(pi.Process)
     windows.CloseHandle(pi.Thread)
     TerminateProcess(int(pi.ProcessId))
-    return err
+    return fmt.Errorf("Failed to inject DLL, error code: %d", r)
   }
 
   path, err = GetProcessExecutable(pi.ProcessId)
@@ -198,8 +236,6 @@ func cli_launch(cmdLine string) error {
   }
   RegisterProcess(int(pi.ProcessId), path)
 }
-
-func cli_help() {}
 
 func RegisterProcess(pid int, path string) {
   _, exists := processes[pid]
@@ -215,9 +251,17 @@ func RegisterProcess(pid int, path string) {
     RegEvents:      make(map[string]RegEventData),
     PatternMatches: make(map[string]*StdResult),
   }
-  //TODO launch static scan
+  //TODO check if static scan was already performed on this file (save file scan history)
+  go StaticScan(pid, false) // no print
 }
 
 func (p *Process) PrintBasic() {
   fmt.Printf("\n[*] Process %d [*]\n", p)
+  fmt.Printf("\tFilepath: %s", p.Path)
+  if p.IsSigned {
+    color.Green(" (signed)")
+  } else {
+    fmt.Println(" (NOT signed)")
+  }
+  fmt.Printf("\tScore: %d(/100)\n\n", p.TotalScore)
 }

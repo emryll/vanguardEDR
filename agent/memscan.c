@@ -1,6 +1,23 @@
 #include <yara_x.h>
+#include <windows.h>
+#include "memscan.h"
 
 //? How do I portray results of scan to go side?
+//* ^ you will use go yara-x api instead
+/*
+//TODO: upon match you will increment an int representing total score of that process
+//TODO: then you trigger a goroutine to write the full data of match to log file
+void YaraCallback(YRX_RULE* rule, void* data) {
+    const uint8_t* identifier;
+    size_t len;
+
+    if (yrx_rule_identifier(rule, &ident, &len) == YRX_SUCCESS) {
+        printf("[i] Matched rule: %.*s\n", (int)len, ident);
+    } else {
+        printf("[!] Failed to get rule identifier\n");
+    }
+}
+
 
 // takes any userdata callback can read/write to, returns rules and scanner. 
 // Caller must free scanner then rules
@@ -25,7 +42,7 @@ int InitializeYara(YRX_RULES* rules, YRX_SCANNER* scanner, void* user_data) {
 
     for (size_t i = 0; i < count; i++) {
         size_t ruleSize;
-        char* rule = ReadFileEx(paths[i], &ruleSize);
+        char* rule = ReadFile2(paths[i], &ruleSize);
         if (rule == NULL || strlen(rule) == 0) {
             printf("Failed to read %s, it may not exist\n", paths[i]);
             return -3;
@@ -41,7 +58,7 @@ int InitializeYara(YRX_RULES* rules, YRX_SCANNER* scanner, void* user_data) {
     FreePaths(&paths, count);
 
     //* build the rules
-    rules = yrx_compiler_build(compiler) 
+    rules = yrx_compiler_build(compiler);
     if (rules == NULL) {
         printf("Failed to compile rules\n");
         yrx_compiler_destroy(compiler);
@@ -66,28 +83,14 @@ int InitializeYara(YRX_RULES* rules, YRX_SCANNER* scanner, void* user_data) {
 
     return 0;
 }
-
+*/
 void UninitializeYara(YRX_RULES* rules, YRX_SCANNER* scanner) {
-    yrx_scanner_dstroy(scanner);
+    yrx_scanner_destroy(scanner);
     yrx_rules_destroy(rules);
 }
-
-//TODO: upon match you will increment an int representing total score of that process
-//TODO: then you trigger a goroutine to write the full data of match to log file
-void YaraCallback(YRX_RULE* rule, void* data) {
-    const uint8_t* identifier;
-    size_t len;
-
-    if (yrx_rule_identifier(rule, &ident, &len) == YRX_SUCCESS) {
-        printf("[i] Matched rule: %.*s\n", (int)len, ident);
-    } else {
-        printf("[!] Failed to get rule identifier\n");
-    }
-}
-
 // scan all rwx memory of process
 //TODO: test
-int ScanRWXMemory(void* hProcess, YRX_SCANNER* scanner) {
+int ScanRWXMemory(HANDLE hProcess, YRX_SCANNER* scanner) {
     size_t numRegions;
     MEMORY_REGION* rwxRegions = GetRWXMemory(hProcess, &numRegions);
     if (rwxRegions == NULL) {
@@ -103,7 +106,7 @@ int ScanRWXMemory(void* hProcess, YRX_SCANNER* scanner) {
             printf("[!] Failed to read remote process memory at 0x%p\n", rwxRegions[i].address);
             continue;
         }
-        printf("[i] Read %dB of RWX memory at 0x%p\n", bytesRead, rwxRegions[i].address);
+        printf("[i] Read %dB of RWX memory at 0x%p\n", readBytes, rwxRegions[i].address);
         if (yrx_scanner_scan(scanner, buffer, readBytes) != YRX_SUCCESS) {
             printf("[!] Failed to scan buffer\n");
         }
@@ -132,7 +135,7 @@ int ScanMainModuleText(HANDLE hProcess, YRX_SCANNER* scanner) {
 // scan rwx and .text of main module
 int MemoryScan(unsigned int pid, YRX_SCANNER* scanner) {
     printf("\n[i] Performing basic memory scan on process %d...\n", pid);
-    DWORD hProcess = OpenProcess(PROCESS_QUERY_INFORMATION | PROCESS_VM_READ, FALSE, pid);
+    HANDLE hProcess = OpenProcess(PROCESS_QUERY_INFORMATION | PROCESS_VM_READ, FALSE, pid);
     if (hProcess == NULL) {
         return GetLastError();
     }
@@ -151,7 +154,7 @@ int MemoryScan(unsigned int pid, YRX_SCANNER* scanner) {
 // scan all sections of all modules
 int MemoryScanEx(unsigned int pid, YRX_SCANNER* scanner) {
     printf("\n[i] Performing full memory scan on process %d...\n", pid);
-    DWORD hProcess = OpenProcess(PROCESS_QUERY_INFORMATION | PROCESS_VM_READ, FALSE, pid);
+    HANDLE hProcess = OpenProcess(PROCESS_QUERY_INFORMATION | PROCESS_VM_READ, FALSE, pid);
     if (hProcess == NULL) {
         return GetLastError();
     }
@@ -180,7 +183,7 @@ int MemoryScanEx(unsigned int pid, YRX_SCANNER* scanner) {
             free(buffer);
         }
     }
-    FreeRemoteModuleArray(modules);
+    FreeRemoteModuleArray(modules, numModules);
     return 0;
 }
 
