@@ -6,32 +6,118 @@ import (
 	"unsafe"
 )
 
+const VERSION = "0.0.0-alpha"
+
 type Process struct {
-	Path     string
-	IsSigned bool
-	ApiMu    sync.Mutex
+	Path           string
+	IsSigned       bool
+	StaticScanDone bool // represents the first static scan to avoid unnecessary extra scans. might also want a file scan history
+	ApiMu          sync.Mutex
 	// this is collected telemetry data history
 	APICalls   map[string]ApiCallData   // key: api call name
 	FileEvents map[string]FileEventData // key: filepath
 	RegEvents  map[string]RegEventData  // key: name of reg key
 	// this is the matched patterns that make up the total score
 	PatternMatches map[string]*StdResult // key: name of pattern
-	//TODO: seperate score and results for static analysis?
-	LastHeartbeat int64
-	ScoreMu       sync.Mutex
-	YaraScore     int
-	TotalScore    int
+	LastHeartbeat  int64
+	ScoreMu        sync.Mutex
+	StaticScore    int
+	TotalScore     int
 }
 
+// This is the universal result type for portraying multiple matches from a single scan.
+// The Log method should be called always after receiving Result from a function,
+// it will handle logging/printing and saving matches to Process structure.
+type Result struct {
+	TotalScore int
+	Results    []StdResult
+}
+
+// universal type for portraying results
+type StdResult struct {
+	Name        string   // short name of pattern
+	Description string   // what the pattern match means
+	Tag         string   // to help portray results; for example "imports"
+	Category    []string // for example "evasion"; describes what sort of pattern it was
+	Score       int      // actual score for how likely its malicious
+	Severity    int      // 0, 1, 2 (low, medium, high); only for colors, doesnt affect anything else
+	Count       int
+	TimeStamp   int64 // latest
+}
+
+// representation of a scan task for the scheduler and workers
 type Scan struct {
 	Pid  int
 	Type int
 	Arg  string
 }
 
+// representation of a cli command, for the help function
+type CliCommand struct {
+	Syntax      string
+	Description string
+}
+
+// representation of an API call seen as potentially malicious
+type MalApi struct {
+	Name     string   `json:"name"`
+	Severity int      `json:"severity"`
+	Score    int      `json:"score"`
+	Tag      []string `json:"tag"`
+}
+
+// TODO change name to id
+type ApiPattern struct {
+	Name        string     `json:"name"`
+	Description string     `json:"description"`
+	Category    []string   `json:"category"`
+	ApiCalls    [][]string `json:"api_calls"`  // lets you define all possible options, so can do both kernel32 and nt
+	TimeRange   int        `json:"time_range"` // seconds (only for behavioral patterns, not static)
+	Score       int        `json:"score"`      // actual score for how malicious it is
+	Severity    int        `json:"severity"`   // severity only for coloring output: 0(low), 1(medium) or 2(high)
+}
+
+// describes a file system event or registry event pattern
+type FRPattern struct {
+	Name     string   `json:"name"`
+	Severity int      `json:"severity"`
+	Path     []string `json:"path"`   // make into map?
+	Action   int      `json:"action"` // can be multiple, check with &
+	// optional, currently intended for reg patterns, but may be used for fs as well in the future
+	// for example, it could be used to refer to unsigned processes, or maybe !Windows/System32/*
+	// to refer to all non-system32 paths. Currently this arg is not implemented as of 0.0.0-alpha
+	Arg []string `json:"arg"`
+}
+
+// Describe results of a hash lookup originating from malwarebazaar
+type HashLookup struct {
+	Sha256 string
+	Status string `json:"query_status"` // ok / hash_not_found
+	Data   []struct {
+		Signature string   `json:"signature"`
+		Tags      []string `json:"tags"`
+		YaraRules []struct {
+			Name        string `json:"rule_name"`
+			Description string `json:"description"`
+		} `json:"yara_rules"`
+	} `json:"data"`
+}
+
 const (
-	MAX_PATH                    = 260 // MAX_PATH from windows.h
-	DEFAULT_RULE_DIR            = ".\\rules"
+	MAX_PATH                  = 260 // MAX_PATH from windows.h
+	DEFAULT_RULE_DIR          = "./rules"
+	DEFAULT_PATTERN_FILENAME  = "apipatterns.json"
+	DEFAULT_FUNCLIST_FILENAME = "malapi.json"
+	API_PATTERN_EXTENSION     = ".pattern"
+	YARA_FILE_EXTENSION       = ".yara"
+	MAX_INDIVIDUAL_FN_SCORE   = 20 // static analysis
+	MAX_PATTERN_SCORE         = 60 // static analysis
+	LOW_FN_DEFAULT_SCORE      = 1
+	MEDIUM_FN_DEFAULT_SCORE   = 3
+	HIGH_FN_DEFAULT_SCORE     = 6
+	MAX_PROCESS_SCORE         = 100
+	MAX_STATIC_SCORE          = 100
+
 	MEMORYSCAN_INTERVAL         = 45  //sec
 	THREADSCAN_INTERVAL         = 45  //sec
 	HEARTBEAT_INTERVAL          = 30  //sec
@@ -39,9 +125,10 @@ const (
 	MAX_HEARTBEAT_DELAY         = HEARTBEAT_INTERVAL * 2
 	TM_HISTORY_CLEANUP_INTERVAL = 30 //sec
 
-	SCAN_MEMORYSCAN    = 0 // scan RWX mem and .text of main module
-	SCAN_MEMORYSCAN_EX = 1 // scan all sections of all modules
-	SCAN_MEMORY_MODULE = 2 // fully scan specific module
+	SCAN_MEMORYSCAN      = 0 // scan RWX mem and .text of main module
+	SCAN_MEMORYSCAN_EX   = 1 // scan all sections of all modules
+	SCAN_MEMORY_MODULE   = 2 // fully scan specific module
+	SCAN_MEMORYSCAN_FULL = 3 // scan the whole process
 
 	TM_TYPE_EMPTY_VALUE    = 0
 	TM_TYPE_API_CALL       = 1
@@ -71,6 +158,8 @@ const (
 	FILE_ACTION_CREATE = 1 << 1
 )
 
+//*======================[TELEMETRY]==============================
+
 type Heartbeat struct {
 	Pid       uint32
 	Heartbeat [64]byte
@@ -81,6 +170,9 @@ type Command struct {
 	Command [64]byte
 }
 
+// each telemetry packet (not including heartbeat and command, as that is classed as different)
+// will send this in the beginning of the packet, to allow for dynamically sized packets.
+// Calling the Log method will handle everything once youve received the packet
 type TelemetryHeader struct {
 	Pid       uint32
 	Type      uint32
@@ -88,9 +180,9 @@ type TelemetryHeader struct {
 	TimeStamp int64
 }
 
-type Telemetry struct {
-	Header  TelemetryHeader
-	RawData [TM_MAX_DATA_SIZE]byte
+type History[T any] interface {
+	GetTime() int64
+	HistoryPtr() *[]T
 }
 
 type ApiArg struct {
@@ -98,11 +190,7 @@ type ApiArg struct {
 	RawData [API_ARG_MAX_SIZE]byte
 }
 
-type History[T any] interface {
-	GetTime() int64
-	HistoryPtr() *[]T
-}
-
+// describe an api call intercepted by hooks
 type ApiCallData struct {
 	ThreadId  uint32
 	DllName   string
@@ -120,6 +208,7 @@ func (a ApiCallData) HistoryPtr() *[]ApiCallData {
 	return &a.History
 }
 
+// results of an integrity check of a modules .text section
 type TextCheckData struct {
 	Result    bool
 	Module    string
@@ -130,6 +219,7 @@ type FileEventData struct {
 	Path      string
 	Action    uint32
 	TimeStamp int64
+	Data      uintptr
 	History   []FileEventData
 }
 
@@ -149,56 +239,19 @@ func (r RegEventData) GetTime() int64 {
 	return r.TimeStamp
 }
 
-// TODO: use ints for memory efficiency and faster comparison?
-type ApiFuncs struct {
-	Funcs []string //  use ids instead with bit manipulation for memory efficiency
-}
+/*
+	type PatternResult struct {
+		Name      string
+		Score     int   // actual score for how malicious it is
+		Severity  int   // severity only for coloring output: 0(low), 1(medium) or 2(high)
+		TimeStamp int64 // time of detection, not call
+		Count     int
+	}
 
-// TODO change name to id
-type ApiPattern struct {
-	Name        string
-	Description string
-	Category    []string
-	ApiCalls    []ApiFuncs // lets you define all possible options, so can do both kernel32 and nt
-	TimeRange   int        // seconds
-	Score       int        // actual score for how malicious it is
-	Severity    int        // severity only for coloring output: 0(low), 1(medium) or 2(high)
-}
-
-// TODO change name to id
-type FilePattern struct {
-	Name     string
-	Path     []string // make into map?
-	Action   int      // can be multiple, check with &
-	Severity int
-}
-
-// TODO change name to id
-type RegPattern struct {
-	Name     string
-	Path     string
-	Value    string
-	Severity string
-}
-
-type Result struct {
-	TotalScore int
-	Results    []StdResult
-}
-
-// TODO change name to id
-type PatternResult struct {
-	Name      string
-	Score     int   // actual score for how malicious it is
-	Severity  int   // severity only for coloring output: 0(low), 1(medium) or 2(high)
-	TimeStamp int64 // time of detection, not call
-	Count     int
-}
-
-func (p PatternResult) GetTime() int64 {
-	return p.TimeStamp
-}
-
+	func (p PatternResult) GetTime() int64 {
+		return p.TimeStamp
+	}
+*/
 type MemRegion struct {
 	Address unsafe.Pointer
 	Size    uint64
@@ -216,18 +269,6 @@ func (m *RemoteModule) GetName() string {
 		return string(m.Name[:]) // fallback
 	}
 	return string(m.Name[:i])
-}
-
-// universal type for portraying results
-type StdResult struct {
-	Name        string   // short name of pattern
-	Description string   // what the pattern match means
-	Tag         string   // to help portray results; for example "imports"
-	Category    []string // for example "evasion"; describes what sort of pattern it was
-	Score       int      // actual score for how likely its malicious
-	Severity    int      // 0, 1, 2 (low, medium, high); only for colors, doesnt affect anything else
-	Count       int
-	TimeStamp   int64 // latest
 }
 
 type Magic struct {
@@ -287,17 +328,4 @@ var magicToType = []Magic{
 	//TODO: add audio formats
 	//TODO: add more executable types
 	//TODO: lnk and other common malicious initial vector file types
-}
-
-type HashLookup struct {
-	Sha256 string
-	Status string `json:"query_status"` // ok / hash_not_found
-	Data   []struct {
-		Signature string   `json:"signature"`
-		Tags      []string `json:"tags"`
-		YaraRules []struct {
-			Name        string `json:"rule_name"`
-			Description string `json:"description"`
-		} `json:"yara_rules"`
-	} `json:"data"`
 }

@@ -1,14 +1,15 @@
 package main
 
 import (
+	"encoding/json"
+	"fmt"
+	"os"
+	"path/filepath"
+	"strings"
+	"sync"
 	"time"
-)
 
-// TODO: read from external json file
-var (
-	apiPatterns  []ApiPattern
-	filePatterns []FilePattern
-	regPatterns  []RegPattern
+	"github.com/fatih/color"
 )
 
 // returns names of each pattern match and adds them to pattern match history of process
@@ -220,3 +221,116 @@ func HistoryCleanup(wg *sync.WaitGroup, tasks chan *Process) {
 		}
 	}
 }
+
+// json file with each function like so: "function", "severity", "score"
+// severity is low || medium || high and only affects color. score is actual score
+func LoadMaliciousApiListFromDisk(path string) (map[string]MalApi, error) {
+	var filePath string
+	if path == "" {
+		filePath = filepath.Join(DEFAULT_RULE_DIR, DEFAULT_FUNCLIST_FILENAME)
+	} else {
+		info, err := os.Stat(path)
+		if err != nil {
+			return nil, err
+		}
+		if info.IsDir() {
+			filePath = filepath.Join(path, "malapi.json")
+		} else {
+			filePath = path
+		}
+	}
+	data, err := os.ReadFile(filePath)
+	if err != nil {
+		return nil, err
+	}
+
+	var (
+		list   []MalApi
+		malapi = make(map[string]MalApi)
+	)
+	err = json.Unmarshal(data, &list)
+	if err != nil {
+		return nil, fmt.Errorf("Failed to unmarshal JSON: %v", err)
+	}
+	for _, m := range list {
+		if m.Score == 0 {
+			switch m.Severity {
+			case 0:
+				m.Score = LOW_FN_DEFAULT_SCORE
+			case 1:
+				m.Score = MEDIUM_FN_DEFAULT_SCORE
+			case 2:
+				m.Score = HIGH_FN_DEFAULT_SCORE
+			}
+		}
+		malapi[m.Name] = m
+	}
+	return malapi, nil
+}
+
+// json file with each pattern like so: "component1" { "func1", "func2" } "component2" {...} ...
+// severity is low || medium || high and only affects color. score is actual score
+func LoadApiPatternsFromDisk(path string) ([]ApiPattern, error) {
+	var (
+		patterns []ApiPattern
+		filePath string
+		dirPath  string
+	)
+	if path == "" {
+		dirPath = DEFAULT_RULE_DIR
+	} else {
+		info, err := os.Stat(path)
+		if err != nil {
+			return nil, err
+		}
+		if info.IsDir() {
+			dirPath = path
+		} else {
+			filePath = path
+		}
+	}
+	if dirPath == "" {
+		var p []ApiPattern
+		data, err := os.ReadFile(filePath)
+		if err != nil {
+			return nil, err
+		}
+		err = json.Unmarshal(data, &p)
+		if err != nil {
+			return nil, err
+		}
+		patterns = append(patterns, p...)
+	} else { // if its a custom path, walk it to find all .pattern files
+		count := 0
+		err := filepath.Walk(dirPath, func(path string, info os.FileInfo, err error) error {
+			if err != nil {
+				return err // Skip files/dirs that cause an error
+			}
+
+			if !info.IsDir() && strings.HasSuffix(info.Name(), API_PATTERN_EXTENSION) {
+				var p []ApiPattern
+				data, err := os.ReadFile(path)
+				if err != nil {
+					color.Red("\n[!] Failed to read %s!\n\tError: %v", path, err)
+					return nil // skip file
+				}
+				err = json.Unmarshal(data, &p)
+				if err != nil {
+					color.Red("\n[!] Failed to unmarshal %s!\n\tError: %v", path, err)
+					return nil
+				}
+				patterns = append(patterns, p...)
+				count++
+			}
+			return nil
+		})
+		if err != nil {
+			return nil, fmt.Errorf("Directory walk failed: %v", err)
+		}
+		fmt.Printf("[i] Found %d API pattern files\n", count)
+	}
+	return patterns, nil
+}
+
+//TODO: load file patterns
+//TODO: load reg patterns

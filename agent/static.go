@@ -8,7 +8,6 @@ import (
 	"net/http"
 	"net/url"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 
@@ -17,17 +16,33 @@ import (
 )
 
 // Perform static scan on a file, either by PID or filepath
+// Errors will be logged in the function, not returned. It is intended
 func StaticScan[T int | string](target T, print bool) {
-	var path string
+	var (
+		path string
+		pid  = 0
+	)
+	// check if target is path or pid and handle it
 	switch v := any(target).(type) {
 	case int:
-		//TODO: get filepath of process
+		exe, err := GetProcessExecutable(uint32(v))
+		if err != nil {
+			color.Red("\n[!] Failed to find executable path of process %d!", v)
+			fmt.Printf("\tError: %v\n", err)
+		}
+		path = exe
+		//? only save pid if its a tracked process, for purpose of adding results to process object
+		if _, exists := processes[v]; exists {
+			pid = v
+		}
 	case string:
-		path = string(target)
+		path = v
 	}
 
+	// check if path is valid
 	if _, err := os.Stat(path); err != nil {
-		color.Red("\n[!] %s could not be found, ensure the path is correct(error: %v)", path, err)
+		color.Red("\n[!] %s could not be found, ensure the path is correct", path)
+		fmt.Printf("\tError: %v\n", err)
 		return
 	}
 
@@ -48,7 +63,16 @@ func StaticScan[T int | string](target T, print bool) {
 		malScore        = 0
 		proxyScore      = 0
 		sectionScore    = 0
+		err             error
 	)
+
+	// magicToType was sorted by length in main(), largest first
+	maxMagicLen := len(magicToType[0].Bytes)
+	magic, err := GetMagic(path, maxMagicLen)
+	if err != nil {
+		color.Red("\n[!] Failed to read magic bytes of %s!", path)
+		fmt.Printf("\tError: %v\n", err)
+	}
 
 	mbAuthKey := os.Getenv("MALWAREBAZAAR_KEY")
 	if mbAuthKey == "" {
@@ -57,15 +81,24 @@ func StaticScan[T int | string](target T, print bool) {
 		fmt.Println("\tGet one for free at https://auth.abuse.ch/user/me")
 	}
 
-	if yaraRulesFound {
+	//* yara scan
+	if scanner != nil {
 		yaraResults, err = YaraScanFile(scanner, path)
 		if err != nil {
 			color.Red("\n[!] Failed to perform YARA scan on file!\n\tError: %v", err)
 		}
-		scanner.Destroy()
-		rules.Destroy()
-		for _, m := range yaraResults {
-			total += m.Score
+		for _, match := range yaraResults {
+			// this is fine even when target is path, because pid variable will be 0,
+			// and process 0 is obviously, not going to be tracked. Nothing will happen
+			//* log
+			if _, matchExists := processes[pid].PatternMatches["STATIC:"+match.Name]; !matchExists {
+				mu.Lock()
+				processes[pid].PatternMatches["STATIC:"+match.Name] = &match
+				processes[pid].StaticScore += match.Score
+				processes[pid].TotalScore += match.Score
+				mu.Unlock()
+			}
+			total += match.Score
 		}
 	}
 
@@ -77,14 +110,25 @@ func StaticScan[T int | string](target T, print bool) {
 		}
 		defer file.Close()
 
-		if len(apiPatterns) > 0 || len(maliciousApis) > 0 {
+		if len(apiPatterns) > 0 || len(malapi) > 0 {
 			malimpResults, malScore, err = CheckForMaliciousImports(path, file)
 			if err != nil {
 				color.Red("[!] Failed to check imports!\n\tError: %v", err)
 			}
 			results = append(results, malimpResults...)
 			total += malScore
+			//* log
+			for _, match := range malimpResults {
+				if _, matchExists := processes[pid].PatternMatches["STATIC:"+match.Name]; !matchExists {
+					mu.Lock()
+					processes[pid].PatternMatches["STATIC:"+match.Name] = &match
+					processes[pid].StaticScore += match.Score
+					processes[pid].TotalScore += match.Score
+					mu.Unlock()
+				}
+			}
 		}
+		// this is just to print results in a structured way
 		if len(malimpResults) > 0 {
 			for _, r := range malimpResults {
 				switch r.Tag {
@@ -102,6 +146,16 @@ func StaticScan[T int | string](target T, print bool) {
 		}
 		results = append(results, proxyDllResults...)
 		total += proxyScore
+		//* log
+		for _, match := range proxyDllResults {
+			if _, matchExists := processes[pid].PatternMatches["STATIC:"+match.Name]; !matchExists {
+				mu.Lock()
+				processes[pid].PatternMatches["STATIC:"+match.Name] = &match
+				processes[pid].StaticScore += match.Score
+				processes[pid].TotalScore += match.Score
+				mu.Unlock()
+			}
+		}
 	}
 
 	streamResults, streamScore, err := CheckStreams(path)
@@ -110,6 +164,16 @@ func StaticScan[T int | string](target T, print bool) {
 	}
 	results = append(results, streamResults...)
 	total += streamScore
+	//* log
+	for _, match := range streamResults {
+		if _, matchExists := processes[pid].PatternMatches["STATIC:"+match.Name]; !matchExists {
+			mu.Lock()
+			processes[pid].PatternMatches["STATIC:"+match.Name] = &match
+			processes[pid].StaticScore += match.Score
+			processes[pid].TotalScore += match.Score
+			mu.Unlock()
+		}
+	}
 
 	if isPe {
 		sectionResults, sectionScore, err = CheckSections(file)
@@ -118,10 +182,31 @@ func StaticScan[T int | string](target T, print bool) {
 		}
 		results = append(results, sectionResults...)
 		total += sectionScore
+		//* log
+		for _, match := range sectionResults {
+			if _, matchExists := processes[pid].PatternMatches["STATIC:"+match.Name]; !matchExists {
+				mu.Lock()
+				processes[pid].PatternMatches["STATIC:"+match.Name] = &match
+				processes[pid].StaticScore += match.Score
+				processes[pid].TotalScore += match.Score
+				mu.Unlock()
+			}
+		}
 	}
 
-	if total > 100 {
-		total = 100
+	//* make sure score doesnt exceed maximum
+	if total > MAX_STATIC_SCORE {
+		total = MAX_STATIC_SCORE
+	}
+	if processes[pid].StaticScore > MAX_STATIC_SCORE {
+		processes[pid].ScoreMu.Lock()
+		processes[pid].StaticScore = MAX_STATIC_SCORE
+		processes[pid].ScoreMu.Unlock()
+	}
+	if processes[pid].TotalScore > MAX_PROCESS_SCORE {
+		processes[pid].ScoreMu.Lock()
+		processes[pid].TotalScore = MAX_PROCESS_SCORE
+		processes[pid].ScoreMu.Unlock()
 	}
 
 	if print {
@@ -477,7 +562,7 @@ func CheckForMaliciousImports(path string, file *pe.File) ([]StdResult, int, err
 		total += singleFuncScore
 	}
 	//* check api patterns
-	patternResults, patternTotal := CheckApiPatterns(imports)
+	patternResults, patternTotal := CheckStaticApiPatterns(imports)
 	results = append(results, patternResults...)
 	total += patternTotal
 	return results, total, nil
@@ -598,57 +683,4 @@ func CheckSections(file *pe.File) ([]StdResult, int, error) {
 		total += 20
 	}
 	return results, total, nil
-}
-
-func GetEntropyOfFile(path string) (float64, error) {
-	data, err := os.ReadFile(path)
-	if err != nil {
-		return 0.0, err
-	}
-	return GetEntropy(data), nil
-}
-
-func IsSignatureValid(path string) (int, error) {
-	cmd := exec.Command("powershell", "-NoProfile", "-Command",
-		fmt.Sprintf("Get-AuthenticodeSignature -FilePath '%s' | Select-Object -ExpandProperty Status", path),
-	)
-
-	var out bytes.Buffer
-	var stderr bytes.Buffer
-	cmd.Stdout = &out
-	cmd.Stderr = &stderr
-
-	err := cmd.Run()
-	if err != nil {
-		return -1, fmt.Errorf("powershell error: %v, stderr: %s", err, stderr.String())
-	}
-
-	status := strings.TrimSpace(out.String())
-	if status == "Valid" {
-		return 1, nil
-	} else if status == "HashMismatch" {
-		return 2, nil
-	}
-	return 0, nil
-}
-
-/*func CheckMagic() {
-
-}*/
-
-func GetMimeType(path string) (string, error) {
-	file, err := os.Open(path)
-	if err != nil {
-		return "", err
-	}
-	defer file.Close()
-
-	buffer := make([]byte, 512)
-	n, err := file.Read(buffer)
-	if err != nil {
-		return "", err
-	}
-
-	mimeType := http.DetectContentType(buffer[:n])
-	return mimeType, nil
 }

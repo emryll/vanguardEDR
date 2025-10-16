@@ -36,7 +36,7 @@ func LoadYaraRulesFromFolder(path string) (*yara.Rules, *yara.Scanner, error) {
 			return nil // skip file, continue
 		}
 
-		if !info.IsDir() && filepath.Ext(p) == ".yara" {
+		if !info.IsDir() && filepath.Ext(p) == YARA_FILE_EXTENSION {
 			data, err := os.ReadFile(p)
 			if err != nil {
 				color.Red("[!] Failed to read %s\n\tError: %v", p, err)

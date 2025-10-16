@@ -172,16 +172,18 @@ func (header TelemetryHeader) Log(dataBuf []byte) {
 
 // Process and log results. Launch further actions or alerts if needed
 func (r Result) Log(scanName string, pid int) {
-	head := fmt.Sprintf("\n\nGot %d total score from %s (%d matches)\n", r.TotalScore, scanName, len(r.Matches))
+	head := fmt.Sprintf("\n\nGot %d total score from %s (%d matches)\n", r.TotalScore, scanName, len(r.Results))
 	logFile.WriteString(head)
 	if printLog {
 		fmt.Printf(head)
 	}
 
-	processes[pid].ScoreMu.Lock()
-	processes[pid].YaraScore += r.TotalScore
-	processes[pid].TotalScore += r.TotalScore
-	processes[pid].ScoreMu.Unlock()
+	_, pidExists := processes[pid]
+	if pidExists {
+		processes[pid].ScoreMu.Lock()
+		processes[pid].TotalScore += r.TotalScore
+		processes[pid].ScoreMu.Unlock()
+	}
 	//TODO: check if score exceeds thresholds, make a function for this
 
 	//TODO: if m.Severity is severe, trigger an alert
@@ -213,14 +215,16 @@ func (r Result) Log(scanName string, pid int) {
 			logFile.WriteString(categories)
 		}
 		//* update process' history
-		mu.Lock()
-		_, exists := processes[pid].PatternMatches[name]
-		if exists {
-			processes[pid].PatternMatches[name].Count++
-		} else {
-			processes[pid].PatternMatches[name] = &m
+		if pidExists {
+			mu.Lock()
+			_, exists := processes[pid].PatternMatches[name]
+			if exists {
+				processes[pid].PatternMatches[name].Count++
+			} else {
+				processes[pid].PatternMatches[name] = &m
+			}
+			mu.Unlock()
 		}
-		mu.Unlock()
 	}
 	logFile.WriteString("\n\n")
 }

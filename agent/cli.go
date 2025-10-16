@@ -28,7 +28,8 @@ func cli_help() {
 
 // Handle a single command. Take input, parse it, and act on it
 // You can launch demo, inject, query info or start scan
-func cli_parse(tokens string) {
+// This function takes the input, split into words.
+func cli_parse(tokens []string) {
   switch strings.ToLower(tokens[0]) {
   case "help":
     cli_help()
@@ -264,4 +265,8 @@ func (p *Process) PrintBasic() {
     fmt.Println(" (NOT signed)")
   }
   fmt.Printf("\tScore: %d(/100)\n\n", p.TotalScore)
+}
+
+func PrintBanner() {
+  fmt.Printf("\n\tVersion: %s\n", VERSION)
 }
