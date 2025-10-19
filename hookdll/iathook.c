@@ -22,12 +22,13 @@ HookEntry HookList[] = {
     { "NtAllocateVirtualMemoryEx", "ntdll.dll", NULL, NULL, (FARPROC)NtAllocateVMEx_Handler, {0} },
     { "OpenProcess", "kernel32.dll", NULL, NULL,            (FARPROC)OpenProcess_Handler, {0} },
     { "NtOpenProcess", "ntdll.dll", NULL, NULL,             (FARPROC)NtOpenProcess_Handler, {0} },
-//    { "CreateProcessA", "kernel32.dll", NULL, NULL,         CreateProcessA_Handler, {0} },
-//    { "CreateProcessW", "kernel32.dll", NULL, NULL,         CreateProcessW_Handler, {0} },
-//    { "CreateProcessAsUserW", "kernel32.dll", NULL, NULL,   CreateProcessAsUserW_Handler, {0} },
-//    { "NtCreateProcess", "ntdll.dll", NULL, NULL,           NtCreateProcess_Handler, {0} },
-//    { "NtCreateProcessEx", "ntdll.dll", NULL, NULL,         NtCreateProcessEx_Handler, {0} },
-//    { "NtCreateUserProcess", "ntdll.dll", NULL, NULL,       NtCreateUserProcess_Handler, {0} },
+    { "CreateProcessA", "kernel32.dll", NULL, NULL,         (FARPROC)CreateProcessA_Handler, {0} },
+    { "CreateProcessW", "kernel32.dll", NULL, NULL,         (FARPROC)CreateProcessW_Handler, {0} },
+    { "CreateProcessAsUserA", "kernel32.dll", NULL, NULL,   (FARPROC)CreateProcessAsUserA_Handler, {0} },
+    { "CreateProcessAsUserW", "kernel32.dll", NULL, NULL,   (FARPROC)CreateProcessAsUserW_Handler, {0} },
+    { "NtCreateProcess", "ntdll.dll", NULL, NULL,           (FARPROC)NtCreateProcess_Handler, {0} },
+    { "NtCreateProcessEx", "ntdll.dll", NULL, NULL,         (FARPROC)NtCreateProcessEx_Handler, {0} },
+    { "NtCreateUserProcess", "ntdll.dll", NULL, NULL,       (FARPROC)NtCreateUserProcess_Handler, {0} },
     { "CreateRemoteThread", "kernel32.dll", NULL, NULL,     (FARPROC)CreateRemoteThread_Handler, {0} },
     { "CreateRemoteThreadEx", "kernel32.dll", NULL, NULL,   (FARPROC)CreateRemoteThreadEx_Handler, {0} },
     { "NtCreateThread", "ntdll.dll", NULL, NULL,            (FARPROC)NtCreateThread_Handler, {0} },
@@ -35,24 +36,28 @@ HookEntry HookList[] = {
 };
 
 Module TrackedModules[] = {
-    { "kernel32.dll", NULL, NULL },
-    { "kernelbase.dll", NULL, NULL },
-    { "ntdll.dll", NULL, NULL },
-    { "user32.dll", NULL, NULL },
+    { "kernel32.dll",   NULL, {0} },
+    { "kernelbase.dll", NULL, {0} },
+    { "ntdll.dll",      NULL, {0} },
+    { "user32.dll",     NULL, {0} },
     //{ "advapi.dll", NULL, NULL },
 };
 
 const size_t HookListSize = sizeof(HookList) / sizeof(HookEntry); 
 const size_t NumTrackedModules = sizeof(TrackedModules) / sizeof(Module); 
 
+void InitializeModuleList() {
+    for (size_t i = 0; i < NumTrackedModules; i++) {
+        TrackedModules[i].base = GetModuleHandle(TrackedModules[i].name);
+        unsigned int hashLen = 0;
+        HashTextSection(TrackedModules[i].base, TrackedModules[i].textHash, &hashLen);
+    }
+}
+
 // fills function addresses and takes hash
 int InitializeHookList() {
     fprintf(stderr, "start of InitializeHookList, NumTrackedModules: %d\n", NumTrackedModules);
     // pre-fill base addresses of each tracked module onto a list
-    for (size_t i = 0; i < NumTrackedModules; i++) {
-        TrackedModules[i].base = GetModuleHandle(TrackedModules[i].name);
-    }
-
 
     for (size_t i = 0; i < HookListSize; i++) {
         // fill moduleBase from previously loaded list of module addresses
@@ -63,9 +68,7 @@ int InitializeHookList() {
         }
         HookList[i].originalFunc = GetProcAddress(HookList[i].moduleBase, HookList[i].funcName);
         fprintf(stderr, "function %s\n\tmodulebase: %p\n\taddress: %p\n", HookList[i].funcName, HookList[i].moduleBase, HookList[i].originalFunc);
-        
-        //TODO: test this func hash function
-        //FillFunctionHashes(FUNC_HASH_LENGTH);
+        FillFunctionHash(HookList[i].funcHash, HookList[i].originalFunc, FUNC_HASH_LENGTH);
     }
     return 0;
 }
@@ -85,6 +88,7 @@ int InitializeIatHookByName(LPVOID moduleBase, LPCSTR funcToHook, FARPROC handle
 	PIMAGE_IMPORT_BY_NAME functionName = NULL; 
     
     while (importDescriptor->Name != 0) {
+        // is it the correct module's IAT?
 		libraryName = (LPCSTR)((DWORD_PTR)importDescriptor->Name + (DWORD_PTR)moduleBase);
         if (strcmp(libraryName, "") == 0) {
             break;
@@ -127,6 +131,8 @@ int InitializeIatHooksByHookList() {
         //? the iat is in main module, because youre going through modules imported by main module!
         int result = InitializeIatHookByName((LPVOID)GetModuleHandle(NULL), HookList[i].funcName, HookList[i].handler);
         if (result != 0) {
+            // return value 1 is to be expected if the tracked program does not import this function
+            fprintf(stderr, "failed to hook %s (return value %d)\n", HookList[i].funcName, result);
             failed++;
         }
     }

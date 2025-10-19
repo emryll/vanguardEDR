@@ -1,11 +1,12 @@
 #include <windows.h>
+#include <psapi.h>
 #include <stdio.h>
 #include <time.h>
 #include "memscan.h"
 
 #define RULES_DIR ".\\rules"
 #define DEFAULT_LOG "agent.log"
-
+/*
 FILE* output = stdout;
 
 // open default or specified log file for appending
@@ -26,9 +27,9 @@ void Log(const char* format, ...) {
     vfprintf(output, format, args);
     va_end(args);
 }
-
+*/
 // read file contents onto buffer. caller is responsible for freeing buffer
-uint8_t* ReadFileEx(char* path, size_t* out_len) {
+uint8_t* ReadFile2(char* path, size_t* out_len) {
     HANDLE file = CreateFile(path, GENERIC_READ, 0, NULL, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL);
     if (file == INVALID_HANDLE_VALUE) {
         printf("Failed to open file, error: %d\n", GetLastError());
@@ -146,7 +147,7 @@ uint8_t* GetModuleText(HANDLE hProcess, size_t* size) {
         numModules = bytesNeeded / sizeof(HMODULE);
     } else {
         printf("[!] Failed to get module amount, error: %d\n", GetLastError());
-        return GetLastError();
+        return NULL;
     }
 
     HMODULE* hModules = (HMODULE*)malloc(bytesNeeded);
@@ -158,7 +159,7 @@ uint8_t* GetModuleText(HANDLE hProcess, size_t* size) {
     if (!EnumProcessModules(hProcess, hModules, bytesNeeded, &bytesNeeded)) {
         return NULL;
     }
-    MODULE_INFO modInfo;
+    MODULEINFO modInfo;
     if (GetModuleInformation(hProcess, hModules[0], &modInfo, sizeof(modInfo))) {
         free(hModules);
         LPVOID baseAddress = modInfo.lpBaseOfDll;
@@ -175,8 +176,8 @@ uint8_t* GetModuleText(HANDLE hProcess, size_t* size) {
             return NULL;
         }
 
-        LPVOID sectionHeadersAddress = ntHeaderAddress + sizeof(DWORD) + sizeof(IMAGE_FILE_HEADER) + ntHeaders.FileHeader.SizeOfOptionalHeader;
-        DWORD numSections = ntHeaders.FileHeader.NumberOfSections;
+        LPVOID sectionHeadersAddress = ntHeaderAddress + sizeof(DWORD) + sizeof(IMAGE_FILE_HEADER) + ntHeader.FileHeader.SizeOfOptionalHeader;
+        DWORD numSections = ntHeader.FileHeader.NumberOfSections;
         PIMAGE_SECTION_HEADER sectionHeaders = (PIMAGE_SECTION_HEADER)malloc(sizeof(IMAGE_SECTION_HEADER) * numSections);
         if (sectionHeaders == NULL) {
             printf("[!] Failed to allocate memory for section headers\n");
@@ -192,7 +193,7 @@ uint8_t* GetModuleText(HANDLE hProcess, size_t* size) {
         for (DWORD i = 0; i < numSections; i++) {
             if (stricmp((char*)sectionHeaders[i].Name, ".text") == 0) {
                 textAddress = (LPVOID)((DWORD_PTR)baseAddress + sectionHeaders[i].VirtualAddress);
-                *size = sectionHeaders[i].VirtualSize;
+                *size = sectionHeaders[i].Misc.VirtualSize;
 
                 //printf("Text section found!\n\t\\==={ Address: 0x%p\n\t \\=={ Size: %d\n", textAddress, *size);
                 break;
@@ -227,7 +228,6 @@ MEMORY_REGION* GetRWXMemory(HANDLE hProcess, size_t* numRegions) {
     LPVOID lpBaseAddress = NULL;
     MEMORY_REGION* regions = NULL;
     *numRegions = 0;
-    size_t bytesRead;
 
     // Get system info to determine the valid address range
     GetSystemInfo(&sysInfo);
@@ -241,18 +241,18 @@ MEMORY_REGION* GetRWXMemory(HANDLE hProcess, size_t* numRegions) {
 
         if (mbi.State == MEM_COMMIT && mbi.Protect == PAGE_EXECUTE_READWRITE) {
             // Reallocate the array to store a new region
-            regions = (MEMORY_REGION*)realloc(regions, (regionsCount + 1) * sizeof(MEMORY_REGION));
+            regions = (MEMORY_REGION*)realloc(regions, ((*numRegions) + 1) * sizeof(MEMORY_REGION));
             if (regions == NULL) {
                 printf("Failed to realloc memory for regions array.\n");
                 return NULL;
             }
 
-            regions[regionsCount].address = mbi.BaseAddress;
-            regions[regionsCount].size = mbi.RegionSize;
+            regions[*numRegions].address = mbi.BaseAddress;
+            regions[*numRegions].size = mbi.RegionSize;
             (*numRegions)++;
         }
 
-        lpBaseAddress = (LPBYTE)lpBaseAddress + mbi.RegionSize;
+        lpBaseAddress = (LPBYTE)mbi.BaseAddress + mbi.RegionSize;
     }
     return regions;
 }
@@ -264,7 +264,6 @@ MEMORY_REGION* GetAllMemoryRegions(HANDLE hProcess, size_t* numRegions) {
     LPVOID lpBaseAddress = NULL;
     MEMORY_REGION* regions = NULL;
     *numRegions = 0;
-    size_t bytesRead;
 
     // Get system info to determine the valid address range
     GetSystemInfo(&sysInfo);
@@ -443,7 +442,7 @@ MEMORY_REGION* GetAllSectionsOfModule(HANDLE hProcess, char* moduleName, size_t*
         }
 
         // check if its right one
-        if (strlen(moduleName) != strlen(baseName) || stricmp(moduleName, baseName, strlen(moduleName)) != 0) {
+        if (strlen(moduleName) != strlen(baseName) || stricmp(moduleName, baseName) != 0) {
             continue;
         }
         printf("[i] Found %s\n", baseName);
@@ -515,11 +514,11 @@ void FreeRemoteModuleArray(REMOTE_MODULE* modules, size_t numModules) {
     }
     free(modules);
 }
-
+/*
 int NotifyMatchAndRequestScan(char* programName, DWORD pid, YRX_SCANNER* scanner) {
     char text[520];
     sprintf("%s(%d) is suspicious and may be malware, would you like to run a full scan in the background? It may affect performance.", programName, pid);
-    int answer = MessageBox(NULL, text, "Alert!", MB_YESNO | MB_ICONWARNING | MB_SYSTEMODAL);
+    int answer = MessageBox(NULL, text, "Alert!", MB_YESNO | MB_ICONWARNING | MB_SYSTEMMODAL);
     if answer == 0 {
         printf("\n[!] Failed to display message box, error: %d\n", GetLastError());
     } else if (answer == IDYES) {
@@ -527,4 +526,41 @@ int NotifyMatchAndRequestScan(char* programName, DWORD pid, YRX_SCANNER* scanner
         //TODO: check api, file and reg patterns
         //TODO: check hook and self integrity
     }
+}
+*/
+
+int InjectDll(DWORD pid) {
+    //* open handle to process
+    HANDLE hProcess = OpenProcess(PROCESS_VM_WRITE | PROCESS_VM_OPERATION | PROCESS_CREATE_THREAD, FALSE, pid);
+    if (hProcess == NULL) {
+        return GetLastError();
+    }
+
+    //* get address of LoadLibraryA
+    HMODULE k32Base     = GetModuleHandle("kernel32.dll");
+    LPVOID pLoadLibrary = GetProcAddress(k32Base, "LoadLibraryA");
+
+
+    //* allocate memory for dll name
+    LPVOID buffer = VirtualAllocEx(hProcess, NULL, strlen(DLL_NAME) + 1, NULL);
+    if (buffer == NULL) {
+        return GetLastError();
+    }
+
+    //* write dll name to allocated memory
+    ok = WriteProcessMemory(hProcess, buffer, DLL_NAME, strlen(DLL_NAME)+1, NULL);
+    if (!ok) {
+        return GetLastError();
+    }
+
+    //* create remote thread to call LoadLibraryA(dll)
+    HANDLE hThread = CreateRemoteThread(hProcess, NULL, 0,
+    (LPTHREAD_START_ROUTINE)pLoadLibrary, buffer, 0, NULL);
+    if (hThread == NULL) {
+        CloseHandle(hProcess);
+        return GetLastError();
+    }
+    CloseHandle(hProcess);
+    CloseHandle(hThread);
+    return 0;
 }

@@ -6,7 +6,9 @@
 #define MAX_API_ARGS 10 
 #define HEARTBEAT_INTERVAL 20000
 #define INTEGRITY_CHECK_INTERVAL 30000
+#define COUNTER_LOOP_SLEEP_INTERVAL 10000
 #define HOOK_CHECK_INTERVAL      60000
+#define IAT_CHECK_INTERVAL      60000
 #define FUNC_HASH_LENGTH 256 // how many bytes to hash from start of function
 #define EVP_MAX_MD_SIZE 64
 #define DLL_NAME "hook.dll"
@@ -33,7 +35,7 @@ typedef struct {
 typedef struct {
     LPCSTR name;
     LPVOID base;
-    unsigned char* textHash;
+    unsigned char textHash[EVP_MAX_MD_SIZE];
 } Module;
 
 extern HANDLE hHeartbeat;
@@ -43,16 +45,6 @@ extern HookEntry HookList[];
 extern Module TrackedModules[];
 extern const size_t HookListSize;
 extern const size_t NumTrackedModules;
-//? these below are temporary and will be replaced by TrackedModules
-extern unsigned char OwnTextHash[EVP_MAX_MD_SIZE];
-extern unsigned char originalNtTextHash[EVP_MAX_MD_SIZE];
-extern unsigned char originalKernel32TextHash[EVP_MAX_MD_SIZE];
-extern unsigned char originalKbaseTextHash[EVP_MAX_MD_SIZE];
-extern HMODULE ownBase;
-extern HMODULE k32Base;
-extern HMODULE kbase;
-extern HMODULE ntBase;
-
 
 typedef struct {
     DWORD pid;
@@ -71,7 +63,7 @@ typedef enum {
     TM_TYPE_FILE_EVENT     = 2,
     TM_TYPE_REG_EVENT      = 3,
     TM_TYPE_TEXT_INTEGRITY = 4,
-    TM_TYPE_HOOK_INTEGRITY = 5,
+    TM_TYPE_IAT_INTEGRITY = 5,
 } TELEMETRY_TYPE;
 
 typedef enum {
@@ -83,6 +75,8 @@ typedef enum {
     API_ARG_TYPE_PTR
 } API_ARGTYPE;
 
+//TODO make this dynamic too, not union
+// union to describe an arg and its type (for parsing)
 typedef struct {
     API_ARGTYPE type;
     union {
@@ -94,6 +88,7 @@ typedef struct {
     } arg;
 } API_ARG;
 
+// api call telemetry packets' first part after header
 typedef struct {
     DWORD    tid;
     char     dllName[60];
@@ -101,6 +96,7 @@ typedef struct {
     DWORD    argCount;
 } API_CALL_HEADER;
 
+// file system action types
 typedef enum {
     FILE_ACTION_CREATE,
     FILE_ACTION_MODIFY,
@@ -108,16 +104,19 @@ typedef enum {
     FILE_ACTION_MOVE,
 } FILE_ACTION;
 
+// file system events' telemetry packet (etw)
 typedef struct {
     char path[260];
     FILE_ACTION action;
 } FILE_EVENT;
 
+// registry events' telemetry packet (etw)
 typedef struct {
     char path[260];
     char value[260];
 } REG_EVENT;
 
+// text integrity checks' telemetry packet
 typedef struct {
     BOOL result;
     char module[260];
@@ -136,6 +135,11 @@ typedef struct {
     time_t timeStamp;
 } TELEMETRY_HEADER;
 
+typedef struct {
+    char funcName[64];
+    LPVOID address; // this is the invalid address IAT is pointing to
+} IAT_MISMATCH;
+
 //? instead of using an union, be more memory efficient and send only what you need
 //? in a different struct which you can just memcpy() into a buffer after the header
 /*
@@ -151,23 +155,40 @@ typedef struct {
 } TELEMETRY;
 */
 // utils.c
-void GetHookIntegrityTelemetryPacket(TELEMETRY*, int*, int);
-void GetHookBaseTelemetryPacket(TELEMETRY*, LPCSTR, LPCSTR);
-void GetTextTelemetryPacket(TELEMETRY*, char*, BOOL);
-void FillEmptyArgs(TELEMETRY*, int);
+//void GetHookIntegrityTelemetryPacket(TELEMETRY*, int*, int);
+//void GetHookBaseTelemetryPacket(TELEMETRY*, LPCSTR, LPCSTR);
+//void GetTextTelemetryPacket(TELEMETRY*, char*, BOOL);
+//void FillEmptyArgs(TELEMETRY*, int);
+PIMAGE_IMPORT_DESCRIPTOR GetIatImportDescriptor(LPVOID);
+size_t GetTelemetryPacketSize(DWORD, size_t);
+TELEMETRY_HEADER GetTelemetryHeader(DWORD, size_t);
+API_CALL_HEADER GetApiCallHeader(LPCSTR, LPCSTR, size_t);
+TEXT_CHECK GetTextIntegrityPacket(LPCSTR, BOOL);
 
 HANDLE InitializeComms();           // ipc.c
 void WaiterThread(); // ipc.c
-int FillFunctionHashes(DWORD);     // utils.c
+int FillFunctionHash(unsigned char*, LPVOID, size_t);     // utils.c
 int InitializeHookList();           // iathook.c
 int InitializeIatHooksByHookList(); // iathook.c
+void InitializeModuleList(); // iathook.c
 
 // tampering.c
 void heartbeat(HANDLE);
-int* CheckHookIntegrity(int*);
+//int* CheckHookIntegrity(int*);
 BOOL CheckTextSectionIntegrity(unsigned char*, HMODULE);
 void HashTextSection(HMODULE, unsigned char*, unsigned int*);
-void PerformIntegrityChecks(HMODULE, HMODULE, HMODULE);
+//void PerformIntegrityChecks(HMODULE, HMODULE, HMODULE);
+void CheckIatIntegrity(LPVOID);
+
+// utils.cpp
+#ifdef __cplusplus
+extern "C" {
+#endif
+void InitializeHookMap();
+HookEntry* FindHookEntry(LPCSTR);
+#ifdef __cplusplus
+}
+#endif
 
 //*=============================[ API hooks ]========================================
 
@@ -195,7 +216,7 @@ typedef enum {
     HOOK_CREATE_REMOTE_THREAD_EX,
     HOOK_NT_CREATE_THREAD,
     HOOK_NT_CREATE_THREAD_EX,
-    HOOK_QUEUE_USER_APC,
+    //HOOK_QUEUE_USER_APC,
 /*    HOOK_NT_QUEUE_APC_THREAD,
     HOOK_HEAP_ALLOC,
     HOOK_HEAP_REALLOC,
@@ -266,12 +287,25 @@ BOOL CreateProcessW_Handler(LPCWSTR, LPWSTR, LPSECURITY_ATTRIBUTES, LPSECURITY_A
 typedef BOOL (WINAPI *CREATEPROCESSASUSERA)(HANDLE, LPCSTR, LPSTR, LPSECURITY_ATTRIBUTES,
 LPSECURITY_ATTRIBUTES, BOOL, DWORD, LPVOID, LPCSTR, LPSTARTUPINFOA, LPPROCESS_INFORMATION);
 BOOL CreateProcessAsUserA_Handler(HANDLE, LPCSTR, LPSTR, LPSECURITY_ATTRIBUTES,
-LPSECURITY_ATTRIBUTES, BOOL, DWORD, LPVOID, LPCSTR, LPSTARTUPINFOA, LPPROCESS_INFORMATION);
+    LPSECURITY_ATTRIBUTES, BOOL, DWORD, LPVOID, LPCSTR, LPSTARTUPINFOA, LPPROCESS_INFORMATION);
 //* kernel32.dll!CreateProcessAsUserW
 typedef BOOL (WINAPI *CREATEPROCESSASUSERW)(HANDLE, LPCWSTR, LPWSTR, LPSECURITY_ATTRIBUTES,
 LPSECURITY_ATTRIBUTES, BOOL, DWORD, LPVOID, LPCWSTR, LPSTARTUPINFOW, LPPROCESS_INFORMATION);
 BOOL CreateProcessAsUserW_Handler(HANDLE, LPCWSTR, LPWSTR, LPSECURITY_ATTRIBUTES,
-LPSECURITY_ATTRIBUTES, BOOL, DWORD, LPVOID, LPCWSTR, LPSTARTUPINFOW, LPPROCESS_INFORMATION);
+    LPSECURITY_ATTRIBUTES, BOOL, DWORD, LPVOID, LPCWSTR, LPSTARTUPINFOW, LPPROCESS_INFORMATION);
+//* ntdll.dll!NtCreateProcess
+typedef NTSTATUS (NTAPI* NTCREATEPROCESS)(PHANDLE, ACCESS_MASK, PCOBJECT_ATTRIBUTES, HANDLE,
+BOOLEAN, HANDLE, HANDLE, HANDLE);
+NTSTATUS NtCreateProcess_Handler(PHANDLE, ACCESS_MASK, PCOBJECT_ATTRIBUTES, HANDLE, BOOLEAN, HANDLE, HANDLE, HANDLE);
+//* ntdll.dll!NtCreateProcessEx
+typedef NTSTATUS (NTAPI* NTCREATEPROCESSEX)(PHANDLE, ACCESS_MASK, PCOBJECT_ATTRIBUTES, HANDLE,
+ULONG, HANDLE, HANDLE, HANDLE, ULONG);
+NTSTATUS NtCreateProcessEx_Handler(PHANDLE, ACCESS_MASK, PCOBJECT_ATTRIBUTES, HANDLE, ULONG, HANDLE, HANDLE, HANDLE, ULONG);
+//* ntdll.dll!NtCreateUserProcess
+typedef NTSTATUS (NTAPI* NTCREATEUSERPROCESS)(PHANDLE, PHANDLE, ACCESS_MASK, ACCESS_MASK, PCOBJECT_ATTRIBUTES,
+PCOBJECT_ATTRIBUTES, ULONG, ULONG, void*, void*, void*);
+NTSTATUS NtCreateUserProcess_Handler(PHANDLE, PHANDLE, ACCESS_MASK, ACCESS_MASK, PCOBJECT_ATTRIBUTES,
+    PCOBJECT_ATTRIBUTES, ULONG, ULONG, void*, void*, void*);
 
 /*
 //* kernel32.dll!OpenProcessToken
