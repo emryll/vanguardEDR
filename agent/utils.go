@@ -19,7 +19,6 @@ import (
 	"unicode/utf16"
 	"unsafe"
 
-	"github.com/fatih/color"
 	"golang.org/x/sys/windows"
 )
 
@@ -133,7 +132,6 @@ ArgLoop:
 		// get the arg type which is first part of arg struct
 		apiCall.Args = append(apiCall.Args, ApiArg{Type: int(binary.LittleEndian.Uint32(rawData[counter : counter+8]))})
 		counter += 8 // 4 byte padding after 4 byte enum (API_ARGTYPE)
-		fmt.Printf("arg type: %d\n", apiCall.Args[i].Type)
 		switch apiCall.Args[i].Type {
 		//? using copy because of [520]byte vs []byte type mismatch
 		case API_ARG_TYPE_EMPTY:
@@ -524,26 +522,25 @@ func readMotwZoneId(path string) (int, error) {
 func (r HashLookup) Print() {
 	switch r.Status {
 	case "ok":
-		red := color.New(color.FgRed)
-		red.Printf("[*] ")
-		fmt.Println("Hash found in malwarebazaar database!")
+		red.Log("[*] ")
+		white.Log("Hash found in malwarebazaar database!")
 		for _, d := range r.Data {
-			fmt.Printf("\n")
-			fmt.Printf("\tLink: https://bazaar.abuse.ch/sample/%s\n", r.Sha256)
+			white.Log("\n")
+			white.Log("\tLink: https://bazaar.abuse.ch/sample/%s\n", r.Sha256)
 			if d.Signature != "" && d.Signature != "null" {
-				fmt.Printf("\tSignature: %s\n", d.Signature)
+				white.Log("\tSignature: %s\n", d.Signature)
 			}
 			for _, rule := range d.YaraRules {
-				fmt.Println("\n\tYara rule:")
-				fmt.Printf("\t\tName: %s\n", rule.Name)
+				white.Log("\n\tYara rule:")
+				white.Log("\t\tName: %s\n", rule.Name)
 				if rule.Description != "" && rule.Description != "null" {
-					fmt.Printf("\t\tDescription: %s\n", rule.Description)
+					white.Log("\t\tDescription: %s\n", rule.Description)
 				}
 			}
 		}
 
 	case "hash_not_found":
-		color.Green("[*] Hash not found in malwarebazaar database")
+		green.Log("[*] Hash not found in malwarebazaar database")
 	}
 }
 

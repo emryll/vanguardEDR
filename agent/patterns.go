@@ -8,8 +8,6 @@ import (
 	"strings"
 	"sync"
 	"time"
-
-	"github.com/fatih/color"
 )
 
 // returns names of each pattern match and adds them to pattern match history of process
@@ -351,12 +349,12 @@ func LoadApiPatternsFromDisk(path string) ([]ApiPattern, error) {
 				var p []ApiPattern
 				data, err := os.ReadFile(path)
 				if err != nil {
-					color.Red("\n[!] Failed to read %s!\n\tError: %v", path, err)
+					red.Log("\n[!] Failed to read %s!\n\tError: %v", path, err)
 					return nil // skip file
 				}
 				err = json.Unmarshal(data, &p)
 				if err != nil {
-					color.Red("\n[!] Failed to unmarshal %s!\n\tError: %v", path, err)
+					red.Log("\n[!] Failed to unmarshal %s!\n\tError: %v", path, err)
 					return nil
 				}
 				patterns = append(patterns, p...)
@@ -367,7 +365,7 @@ func LoadApiPatternsFromDisk(path string) ([]ApiPattern, error) {
 		if err != nil {
 			return nil, fmt.Errorf("Directory walk failed: %v", err)
 		}
-		fmt.Printf("[i] Found %d API pattern files\n", count)
+		white.Log("[i] Found %d API pattern files\n", count)
 	}
 	return patterns, nil
 }

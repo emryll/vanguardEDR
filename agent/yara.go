@@ -10,11 +10,9 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
-	"time"
 	"unsafe"
 
 	yara "github.com/VirusTotal/yara-x/go"
-	"github.com/fatih/color"
 	"golang.org/x/sys/windows"
 )
 
@@ -27,25 +25,25 @@ func LoadYaraRulesFromFolder(path string) (*yara.Rules, *yara.Scanner, error) {
 	}
 	c, err := yara.NewCompiler()
 	if err != nil || c == nil {
-		color.Red("[!] Failed to create YARA compiler!\n\tError: %v", err)
+		red.Log("[!] Failed to create YARA compiler!\n\tError: %v", err)
 		return nil, nil, err
 	}
 	err = filepath.Walk(dir, func(p string, info os.FileInfo, err error) error {
 		if err != nil {
-			color.Red("[!] Failed to read %s\n\tError: %v", p, err)
+			red.Log("[!] Failed to read %s\n\tError: %v", p, err)
 			return nil // skip file, continue
 		}
 
 		if !info.IsDir() && filepath.Ext(p) == YARA_FILE_EXTENSION {
 			data, err := os.ReadFile(p)
 			if err != nil {
-				color.Red("[!] Failed to read %s\n\tError: %v", p, err)
+				red.Log("[!] Failed to read %s\n\tError: %v", p, err)
 				return nil // skip file, continue
 			}
 
 			err = c.AddSource(string(data))
 			if err != nil {
-				color.Red("[!] Failed to add source!\n\tError: %v", err)
+				red.Log("[!] Failed to add source!\n\tError: %v", err)
 				return err
 			}
 
@@ -153,13 +151,7 @@ func ScanMainModuleText(hProcess windows.Handle, scanner *yara.Scanner) ([]StdRe
 // Scans RWX memory and main module's .text section of a specified process.
 // This function returns the Results and the caller is responsible for adding them to history
 func BasicMemoryScan(pid uint32, scanner *yara.Scanner) (Result, error) {
-	now := time.Now()
-	ftime := now.Format("15:04:05")
-	info := fmt.Sprintf("\n[%s] Performing basic memory scan on process %d...\n", ftime, pid)
-	logFile.WriteString(info)
-	if printLog {
-		fmt.Printf(info)
-	}
+	white.Log("\nPerforming basic memory scan on process %d...\n", pid)
 
 	hProcess, err := windows.OpenProcess(windows.PROCESS_QUERY_INFORMATION|windows.PROCESS_VM_READ, false, pid)
 	if err != nil {
@@ -175,9 +167,7 @@ func BasicMemoryScan(pid uint32, scanner *yara.Scanner) (Result, error) {
 	if rwxErr != nil {
 		failtracker++
 	} else {
-		if printLog {
-			fmt.Printf("\n[*] Scanned RWX memory of process %d\n", pid)
-		}
+		white.Log("\n[*] Scanned RWX memory of process %d\n", pid)
 		if len(results.Results) > 0 {
 			results.Results = append(results.Results, rwxResults...)
 			results.TotalScore += results.Results[len(results.Results)-1].Score
@@ -188,7 +178,7 @@ func BasicMemoryScan(pid uint32, scanner *yara.Scanner) (Result, error) {
 		failtracker += 2
 	} else {
 		if printLog {
-			fmt.Printf("\n[*] Scanned main module's .text section of process %d\n", pid)
+			white.Log("\n[*] Scanned main module's .text section of process %d\n", pid)
 		}
 		if len(results.Results) > 0 {
 			results.Results = append(results.Results, textResults...)
@@ -211,7 +201,7 @@ func BasicMemoryScan(pid uint32, scanner *yara.Scanner) (Result, error) {
 
 // TODO update logging
 func MemoryScanEx(pid uint32, scanner *yara.Scanner) (Result, error) {
-	fmt.Printf("\n[i] Performing full memory scan on process %d...\n", pid)
+	white.Log("\n[i] Performing full memory scan on process %d...\n", pid)
 	hProcess, err := windows.OpenProcess(windows.PROCESS_QUERY_INFORMATION|windows.PROCESS_VM_READ, false, pid)
 	if err != nil {
 		return Result{}, fmt.Errorf("Failed to open process: %v", err)
@@ -224,7 +214,7 @@ func MemoryScanEx(pid uint32, scanner *yara.Scanner) (Result, error) {
 	)
 	mods := C.GetAllSectionsOfProcess(C.HANDLE(unsafe.Pointer(hProcess)), &numModules)
 	if mods == nil || numModules == 0 {
-		color.Red("[ERROR] Failed to get sections of process %d", pid)
+		red.Log("[ERROR] Failed to get sections of process %d", pid)
 		return Result{}, fmt.Errorf("Failed to get sections")
 	}
 	defer C.FreeRemoteModuleArray(mods, numModules)
@@ -236,36 +226,20 @@ func MemoryScanEx(pid uint32, scanner *yara.Scanner) (Result, error) {
 	}
 
 	for _, module := range modules {
-		info := fmt.Sprintf("[i] Scanning %s...\n", module.GetName())
-		if printLog {
-			fmt.Printf(info)
-		}
-		logFile.WriteString(info)
+		white.Log("[i] Scanning %s...\n", module.GetName())
 
 		for i := 0; i < int(module.NumSections); i++ {
 			//TODO: add limits to section size, so you wont read arbitrary size and crash (oom)
-			info := fmt.Sprintf("\tsection %d size: %d (0x%p)\n", i, module.Sections[i].Size, module.Sections[i].Address)
-			if printLog {
-				fmt.Printf(info)
-			}
-			logFile.WriteString(info)
+			white.Log("\tsection %d size: %d (0x%p)\n", i, module.Sections[i].Size, module.Sections[i].Address)
 
 			buf, err := ReadRemoteProcessMem(hProcess, uintptr(module.Sections[i].Address), int(module.Sections[i].Size))
 			if err != nil {
-				errMsg := fmt.Sprintf("\n[!] Failed to read section at 0x%p within process %d: %v", module.Sections[i].Address, pid, err)
-				if printLog {
-					color.Red(errMsg)
-				}
-				logFile.WriteString(errMsg)
+				red.Log("\n[!] Failed to read section at 0x%p within process %d: %v", module.Sections[i].Address, pid, err)
 				continue
 			}
 			result, err := scanner.Scan(buf)
 			if err != nil {
-				errMsg := fmt.Sprintf("[!] Failed to scan buffer of memory(%dB): %v", len(buf), err)
-				if printLog {
-					color.Red(errMsg)
-				}
-				logFile.WriteString(errMsg)
+				red.Log("[!] Failed to scan buffer of memory(%dB): %v", len(buf), err)
 				continue
 			}
 			results.Results = append(results.Results, getResultsFromRules(result.MatchingRules())...)
@@ -279,7 +253,7 @@ func MemoryScanEx(pid uint32, scanner *yara.Scanner) (Result, error) {
 
 // TODO: update logging
 func FullMemoryScan(pid uint32, scanner *yara.Scanner) (Result, error) {
-	fmt.Printf("\n[i] Performing full memory scan on process %d...\n", pid)
+	white.Log("\n[i] Performing full memory scan on process %d...\n", pid)
 	hProcess, err := windows.OpenProcess(windows.PROCESS_QUERY_INFORMATION|windows.PROCESS_VM_READ, false, pid)
 	if err != nil {
 		return Result{}, fmt.Errorf("Failed to open process: %v", err)
@@ -299,12 +273,12 @@ func FullMemoryScan(pid uint32, scanner *yara.Scanner) (Result, error) {
 	for _, region := range regions {
 		buf, err := ReadRemoteProcessMem(hProcess, uintptr(region.Address), int(region.Size))
 		if err != nil {
-			color.Red("[!] Failed to read memory region at 0x%p: %v", region.Address, err)
+			red.Log("[!] Failed to read memory region at 0x%p: %v", region.Address, err)
 			continue
 		}
 		result, err := scanner.Scan(buf)
 		if err != nil {
-			color.Red("[!] Failed to scan buffer (%dB): %v", len(buf), err)
+			red.Log("[!] Failed to scan buffer (%dB): %v", len(buf), err)
 			continue
 		}
 		results.Results = append(results.Results, getResultsFromRules(result.MatchingRules())...)

@@ -1,7 +1,7 @@
 package main
 
 import (
-	"fmt"
+	"log"
 	"os"
 	"strings"
 	"sync"
@@ -9,23 +9,28 @@ import (
 
 	yara "github.com/VirusTotal/yara-x/go"
 	"github.com/chzyer/readline"
-	"github.com/fatih/color"
 )
 
 var (
-	printLog     = true
-	logFile      *os.File
-	logName      = "agent.log"
-	terminate    = make(chan struct{})    // close this to terminate all goroutines
-	processes    = make(map[int]*Process) // key: pid
-	mu           sync.Mutex
-	scannerMu    sync.Mutex
-	scanner      *yara.Scanner
-	rules        *yara.Rules
-	malapi       map[string]MalApi
-	apiPatterns  []ApiPattern
-	filePatterns []FilePattern
-	regPatterns  []RegPattern
+	white       *Color
+	green       *Color
+	yellow      *Color
+	red         *Color
+	printLog    = true
+	logName     = "agent.log"
+	logFile     *os.File
+	logger      *log.Logger
+	logMu       sync.Mutex
+	writer      *DualWriter
+	terminate   = make(chan struct{})    // close this to terminate all goroutines
+	processes   = make(map[int]*Process) // key: pid
+	mu          sync.Mutex
+	scannerMu   sync.Mutex
+	scanner     *yara.Scanner
+	rules       *yara.Rules
+	malapi      map[string]MalApi
+	apiPatterns []ApiPattern
+	frPatterns  []FRPattern // patterns for file system and registry events
 )
 
 // TODO: test
@@ -92,7 +97,7 @@ func PeriodicScanHandler(wg *sync.WaitGroup, priorityTasks chan Scan, tasks chan
 			case SCAN_MEMORYSCAN:
 				results, err := BasicMemoryScan(uint32(scan.Pid), scanner)
 				if err != nil {
-					color.Red("[!] Failed to perform memory scan: %v", err)
+					red.Log("[!] Failed to perform memory scan: %v", err)
 				}
 				results.Log("basic memory scan", scan.Pid)
 				if results.TotalScore > 10 {
@@ -104,7 +109,7 @@ func PeriodicScanHandler(wg *sync.WaitGroup, priorityTasks chan Scan, tasks chan
 			case SCAN_MEMORYSCAN:
 				results, err := BasicMemoryScan(uint32(scan.Pid), scanner)
 				if err != nil {
-					color.Red("[!] Failed to perform memory scan: %v", err)
+					red.Log("[!] Failed to perform memory scan: %v", err)
 				}
 				results.Log("basic memory scan", scan.Pid)
 				if results.TotalScore > 10 {
@@ -122,7 +127,7 @@ func main() {
 	)
 	logFile, err = os.OpenFile(logName, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
 	if err != nil {
-		color.Red("\n[!] Failed to open log: %v", err)
+		red.Log("\n[!] Failed to open log: %v", err)
 		//TODO: should you return?
 	}
 	defer logFile.Close()
@@ -140,20 +145,20 @@ func main() {
 	//* load ruleset
 	rules, scanner, err = LoadYaraRulesFromFolder("")
 	if err != nil {
-		color.Red("\n[FATAL] Unable to load yara rules!")
-		fmt.Printf("\tError: %v\n", err)
+		red.Log("\n[FATAL] Unable to load yara rules!")
+		white.Log("\tError: %v\n", err)
 		return
 	}
 
-	malapi, err = LoadMaliciousApiListFromDisk()
+	malapi, err = LoadMaliciousApiListFromDisk("")
 	if err != nil {
-		color.Red("\n[!] Failed to load malicious API list!")
-		fmt.Printf("\tError: %v\n", err)
+		red.Log("\n[!] Failed to load malicious API list!")
+		white.Log("\tError: %v\n", err)
 	}
 
 	apiPatterns, err = LoadApiPatternsFromDisk("")
 	if err != nil {
-		color.Red("\n[!] Failed to load")
+		red.Log("\n[!] Failed to load")
 	}
 	//TODO: load file patterns
 	//TODO: load reg patterns
@@ -165,11 +170,11 @@ func main() {
 	prompt := " \033[32m$\033[0m "
 	rl, err := readline.New(prompt)
 	if err != nil {
-		color.Red("\n[FATAL] Failed to initialize CLI!")
-		fmt.Printf("\tError: %v\n", err)
+		red.Log("\n[FATAL] Failed to initialize CLI!")
+		white.Log("\tError: %v\n", err)
 		return
 	}
-	PrintBanner()
+	PrintBanner(DEFAULT_BANNER)
 Cli:
 	for {
 		select {
@@ -180,8 +185,8 @@ Cli:
 		// main loop code here
 		command, err := rl.Readline()
 		if err != nil {
-			color.Red("\n[!] Failed to read input!")
-			fmt.Printf("\tError: %v\n", err)
+			red.Log("\n[!] Failed to read input!")
+			white.Log("\tError: %v\n", err)
 			continue
 		}
 		tokens := strings.Fields(command)

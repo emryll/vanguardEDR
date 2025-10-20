@@ -27,8 +27,8 @@ func StaticScan[T int | string](target T, print bool) {
 	case int:
 		exe, err := GetProcessExecutable(uint32(v))
 		if err != nil {
-			color.Red("\n[!] Failed to find executable path of process %d!", v)
-			fmt.Printf("\tError: %v\n", err)
+			red.Log("\n[!] Failed to find executable path of process %d!", v)
+			white.Log("\tError: %v\n", err)
 		}
 		path = exe
 		//? only save pid if its a tracked process, for purpose of adding results to process object
@@ -41,8 +41,8 @@ func StaticScan[T int | string](target T, print bool) {
 
 	// check if path is valid
 	if _, err := os.Stat(path); err != nil {
-		color.Red("\n[!] %s could not be found, ensure the path is correct", path)
-		fmt.Printf("\tError: %v\n", err)
+		red.Log("\n[!] %s could not be found, ensure the path is correct", path)
+		white.Log("\tError: %v\n", err)
 		return
 	}
 
@@ -70,13 +70,13 @@ func StaticScan[T int | string](target T, print bool) {
 	maxMagicLen := len(magicToType[0].Bytes)
 	magic, err := GetMagic(path, maxMagicLen)
 	if err != nil {
-		color.Red("\n[!] Failed to read magic bytes of %s!", path)
-		fmt.Printf("\tError: %v\n", err)
+		red.Log("\n[!] Failed to read magic bytes of %s!", path)
+		white.Log("\tError: %v\n", err)
 	}
 
 	mbAuthKey := os.Getenv("MALWAREBAZAAR_KEY")
 	if mbAuthKey == "" {
-		color.Red("\n[!] Failed to get malwarebazaar API auth key")
+		red.Log("\n[!] Failed to get malwarebazaar API auth key")
 		fmt.Println("\tSet MALWAREBAZAAR_KEY environment variable to your API key")
 		fmt.Println("\tGet one for free at https://auth.abuse.ch/user/me")
 	}
@@ -85,7 +85,7 @@ func StaticScan[T int | string](target T, print bool) {
 	if scanner != nil {
 		yaraResults, err = YaraScanFile(scanner, path)
 		if err != nil {
-			color.Red("\n[!] Failed to perform YARA scan on file!\n\tError: %v", err)
+			red.Log("\n[!] Failed to perform YARA scan on file!\n\tError: %v", err)
 		}
 		for _, match := range yaraResults {
 			// this is fine even when target is path, because pid variable will be 0,
@@ -105,7 +105,7 @@ func StaticScan[T int | string](target T, print bool) {
 	if isPe {
 		file, err = pe.Open(path)
 		if err != nil {
-			color.Red("[!] Failed to open %s: %v", path, err)
+			red.Log("[!] Failed to open %s: %v", path, err)
 			return
 		}
 		defer file.Close()
@@ -113,7 +113,7 @@ func StaticScan[T int | string](target T, print bool) {
 		if len(apiPatterns) > 0 || len(malapi) > 0 {
 			malimpResults, malScore, err = CheckForMaliciousImports(path, file)
 			if err != nil {
-				color.Red("[!] Failed to check imports!\n\tError: %v", err)
+				red.Log("[!] Failed to check imports!\n\tError: %v", err)
 			}
 			results = append(results, malimpResults...)
 			total += malScore
@@ -160,7 +160,7 @@ func StaticScan[T int | string](target T, print bool) {
 
 	streamResults, streamScore, err := CheckStreams(path)
 	if err != nil {
-		color.Red("[!] Failed to check alternative data streams!\n\tError: %v", err)
+		red.Log("[!] Failed to check alternative data streams!\n\tError: %v", err)
 	}
 	results = append(results, streamResults...)
 	total += streamScore
@@ -178,7 +178,7 @@ func StaticScan[T int | string](target T, print bool) {
 	if isPe {
 		sectionResults, sectionScore, err = CheckSections(file)
 		if err != nil {
-			color.Red("[!] Failed to check sections\n\tError: %v", err)
+			red.Log("[!] Failed to check sections\n\tError: %v", err)
 		}
 		results = append(results, sectionResults...)
 		total += sectionScore
@@ -213,124 +213,119 @@ func StaticScan[T int | string](target T, print bool) {
 		processes[pid].StaticScanDone = true
 	}
 
-	if print {
-		//* portray results
-		stars := "***************************************************************************"
-		fmt.Printf("\n%s\n", stars)
-		if len(yaraResults) > 0 {
-			//* less important yara rules
-			fmt.Println("\t\t{ YARA-X pattern matches }")
-			for _, match := range yaraResults {
-				match.Print()
-			}
-			fmt.Printf("\n%s\n", stars)
+	//* portray results
+	stars := "***************************************************************************"
+	white.Log("\n%s\n", stars)
+	if len(yaraResults) > 0 {
+		//* less important yara rules
+		white.Log("\t\t{ YARA-X pattern matches }")
+		for _, match := range yaraResults {
+			match.Log()
 		}
+		white.Log("\n%s\n", stars)
+	}
 
-		//* imported funcs
-		if len(importedFuncs) > 0 {
-			fmt.Println("\n\t\t{ Suspicious imported functions }")
-			for _, fn := range importedFuncs {
-				fn.Print()
-			}
-			fmt.Printf("\n%s\n", stars)
+	//* imported funcs
+	if len(importedFuncs) > 0 {
+		white.Log("\n\t\t{ Suspicious imported functions }")
+		for _, fn := range importedFuncs {
+			fn.Log()
 		}
+		white.Log("\n%s\n", stars)
+	}
 
-		//* api patterns
-		if len(importPatterns) > 0 {
-			fmt.Println("\n\t\t{ Suspicious function patterns }")
-			for _, pattern := range importPatterns {
-				pattern.Print()
-			}
-			fmt.Printf("\n%s\n", stars)
+	//* api patterns
+	if len(importPatterns) > 0 {
+		white.Log("\n\t\t{ Suspicious function patterns }")
+		for _, pattern := range importPatterns {
+			pattern.Log()
 		}
+		white.Log("\n%s\n", stars)
+	}
 
-		//* streams
-		if streamScore > 0 {
-			fmt.Println("\n\t\t{ Alternative data streams }")
-			for _, stream := range streamResults {
-				stream.Print()
-			}
-			fmt.Printf("\n%s\n", stars)
+	//* streams
+	if streamScore > 0 {
+		white.Log("\n\t\t{ Alternative data streams }")
+		for _, stream := range streamResults {
+			stream.Log()
 		}
+		white.Log("\n%s\n", stars)
+	}
 
-		//* proxy dll
-		if proxyScore > 0 {
-			fmt.Println("\n\t\t{ Proxy DLL analysis }")
-			for _, result := range proxyDllResults {
-				result.Print()
-			}
-			fmt.Printf("\n%s\n", stars)
+	//* proxy dll
+	if proxyScore > 0 {
+		white.Log("\n\t\t{ Proxy DLL analysis }")
+		for _, result := range proxyDllResults {
+			result.Log()
 		}
-		//TODO critical yara rules
-		var hl HashLookup
-		if mbAuthKey != "" {
-			hl, err = LookupFileHash(path, mbAuthKey)
-			if err != nil {
-				color.Red("\n[!] Failed to lookup file hash: %v", err)
-			} else {
-				if !hl.IsEmpty() {
-					fmt.Println("\n\t\t{ Hash lookup }")
-					hl.Print()
-					fmt.Printf("\n%s\n", stars)
-				}
-			}
-		}
-
-		//* magic
-		fmt.Printf("\n\tMagic bytes: %s\n", magic)
-
-		//* mime type
-		mime, err := GetMimeType(path)
+		white.Log("\n%s\n", stars)
+	}
+	//TODO critical yara rules
+	var hl HashLookup
+	if mbAuthKey != "" {
+		hl, err = LookupFileHash(path, mbAuthKey)
 		if err != nil {
-			color.Red("[!] Failed to get MIME type!\n\tError: %v", err)
+			red.Log("\n[!] Failed to lookup file hash: %v", err)
 		} else {
-			fmt.Printf("\tMIME type: %s\n", mime)
-		}
-
-		baseName := filepath.Base(path)
-
-		//* check digital cert
-		r, err := IsSignatureValid(path)
-		if err != nil {
-			color.Red("\n[!] Failed to check digital certificate!\n\tError: %v", err)
-		} else {
-			switch r {
-			case 0:
-				fmt.Printf("\t%s does not have digital certificate\n\n", baseName)
-			case 1:
-				color.Green("\t%s has a valid digital certificate\n", baseName)
-			case 2:
-				color.Red("\t%s has a hash mismatch in digital certificate, indicating tampering!\n", baseName)
+			if !hl.IsEmpty() {
+				white.Log("\n\t\t{ Hash lookup }")
+				hl.Print()
+				white.Log("\n%s\n", stars)
 			}
 		}
+	}
 
-		//* total score
-		yellow := color.New(color.FgYellow, color.Bold)
-		switch {
-		case total < 30:
-			green := color.New(color.FgGreen)
-			green.Printf("\t[*] ")
-			fmt.Printf("Total score from static analysis of %s:\n", baseName)
-			yellow.Printf("\t\t\t%d", total)
-			color.Green("/100, looks quite normal.")
-		case total < 50:
-			yellow.Printf("\t[*] ")
-			fmt.Printf("Total score from static analysis of %s:\n", baseName)
-			yellow.Printf("\t\t\t%d", total)
-			color.Yellow("/100, moderately suspicious...")
-		case total < 70:
-			yellow.Printf("\t[*] ")
-			fmt.Printf("Total score from static analysis of %s:\n", baseName)
-			yellow.Printf("\t\t\t%d", total)
-			color.Yellow("/100, looks quite suspicious!")
-		case total >= 70:
-			red := color.New(color.FgRed, color.Bold)
-			red.Printf("\t[*] ")
-			fmt.Printf("Total score from static analysis of %s:\n", baseName)
-			yellow.Printf("\t\t\t%d", total)
-			red.Printf("/100, looks ")
-			red.Printf("very suspicious!\n")
+	//* magic
+	white.Log("\n\tMagic bytes: %s\n", magic)
+
+	//* mime type
+	mime, err := GetMimeType(path)
+	if err != nil {
+		red.Log("[!] Failed to get MIME type!\n\tError: %v", err)
+	} else {
+		white.Log("\tMIME type: %s\n", mime)
+	}
+
+	baseName := filepath.Base(path)
+
+	//* check digital cert
+	r, err := IsSignatureValid(path)
+	if err != nil {
+		red.Log("\n[!] Failed to check digital certificate!\n\tError: %v", err)
+	} else {
+		switch r {
+		case 0:
+			white.Log("\t%s does not have digital certificate\n\n", baseName)
+		case 1:
+			green.Log("\t%s has a valid digital certificate\n", baseName)
+		case 2:
+			red.Log("\t%s has a hash mismatch in digital certificate, indicating tampering!\n", baseName)
 		}
+	}
+
+	//* total score
+	switch {
+	case total < 30:
+		green.Log("\t[*] ")
+		white.Log("Total score from static analysis of %s:\n", baseName)
+		yellow.Log("\t\t\t%d", total)
+		green.Log("/100, looks quite normal.")
+	case total < 50:
+		yellow.Log("\t[*] ")
+		white.Log("Total score from static analysis of %s:\n", baseName)
+		yellow.Log("\t\t\t%d", total)
+		yellow.Log("/100, moderately suspicious...")
+	case total < 70:
+		yellow.Log("\t[*] ")
+		white.Log("Total score from static analysis of %s:\n", baseName)
+		yellow.Log("\t\t\t%d", total)
+		yellow.Log("/100, looks quite suspicious!")
+	case total >= 70:
+		red.Log("\t[*] ")
+		white.Log("Total score from static analysis of %s:\n", baseName)
+		yellow.Log("\t\t\t%d", total)
+		red.Log("/100, looks ")
+		red.Log("very suspicious!\n")
 	}
 }
 
@@ -424,7 +419,7 @@ func CheckStreams(path string) ([]StdResult, int, error) {
 		if stream == "Zone.Identifier" {
 			zoneId, err := readMotwZoneId(path)
 			if err != nil {
-				color.Red("[!] Failed to read MOTW of %s, error: %v", path, err)
+				red.Log("[!] Failed to read MOTW of %s, error: %v", path, err)
 				continue
 			}
 			switch zoneId {

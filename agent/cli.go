@@ -115,8 +115,8 @@ func cli_parse(tokens []string) {
 		//* Register process
 		path, err := GetProcessExecutable(uint32(pid))
 		if err != nil {
-			color.Red("\n[!] Failed to get executable of %d!", pid)
-			fmt.Errorf("\tError: %v\n", err)
+			red.Log("\n[!] Failed to get executable of process %d!\n", pid)
+			white.Log("\tError: %v\n", err)
 		}
 
 		RegisterProcess(pid, path)
@@ -148,8 +148,8 @@ func cli_scan[T string | int](scan string, scantype string, target T) error {
 		case "basic":
 			result, err := BasicMemoryScan(uint32(pid), scanner)
 			if err != nil {
-				color.Red("\n[!] Failed to perform basic memory scan on process %d!", target)
-				fmt.Printf("\tError: %v\n", err)
+				red.Log("\n[!] Failed to perform basic memory scan on process %d!\n", target)
+				white.Log("\tError: %v\n", err)
 				return nil // i am only returning errors which are due to improper commandline
 			}
 			result.Log("basic memory scan", pid)
@@ -157,8 +157,8 @@ func cli_scan[T string | int](scan string, scantype string, target T) error {
 		case "full":
 			result, err := FullMemoryScan(uint32(pid), scanner)
 			if err != nil {
-				color.Red("\n[!] Failed to perform full memory scan on process %d!", target)
-				fmt.Errorf("\tError: %v\n", err)
+				red.Log("\n[!] Failed to perform full memory scan on process %d!\n", target)
+				white.Log("\tError: %v\n", err)
 				return nil // i am only returning errors which are due to improper commandline
 			}
 			result.Log("full memory scan", pid)
@@ -185,9 +185,9 @@ func cli_query(pid int, querytype string) error {
 	case "basic", "info", "": // print basic info
 		entry.PrintBasic()
 	case "api", "calls": // print tracked api calls that were used
-		fmt.Printf("Tracked winapi functions called by process %d:\n", pid)
+		white.Log("Tracked winapi functions called by process %d:\n", pid)
 		for _, data := range entry.APICalls {
-			fmt.Printf("*\t%s!%s\n", data.DllName, data.FuncName)
+			white.Log("*\t%s!%s\n", data.DllName, data.FuncName)
 		}
 	case "tracked": // list all tracked processes
 		for _, entry := range processes {
@@ -195,7 +195,8 @@ func cli_query(pid int, querytype string) error {
 		}
 	case "matches", "matched", "patterns":
 		for _, match := range entry.PatternMatches {
-			match.Print()
+			// TODO: make an option to not log this to file.
+			match.Log()
 		}
 	default:
 		return fmt.Errorf("Unknown query type: \"%s\"", querytype)
@@ -243,8 +244,8 @@ func cli_launch(cmdLine string) error {
 
 	path, err := GetProcessExecutable(pi.ProcessId)
 	if err != nil {
-		color.Red("\n[!] Failed to get path of process %d! (created from %s)", pi.ProcessId, cmdLine)
-		fmt.Errorf("\tError: %v\n", err)
+		red.Log("\n[!] Failed to get path of process %d! (created from %s)\n", pi.ProcessId, cmdLine)
+		white.Log("\tError: %v\n", err)
 	}
 	RegisterProcess(int(pi.ProcessId), path)
 	return nil
@@ -258,8 +259,8 @@ func RegisterProcess(pid int, path string) {
 
 	signedStatus, err := IsSignatureValid(path)
 	if err != nil {
-		color.Red("\n[!] Failed to get authenticode signature of %s!", path)
-		fmt.Printf("\tError: %v\n", err)
+		red.Log("\n[!] Failed to get authenticode signature of %s!\n", path)
+		white.Log("\tError: %v\n", err)
 	}
 
 	var signed bool
@@ -269,7 +270,7 @@ func RegisterProcess(pid int, path string) {
 	case HAS_SIGNATURE:
 		signed = true
 	case HASH_MISMATCH:
-		color.Red("\n[!] Hash mismatch on %s!!", path)
+		red.Log("\n[!] Hash mismatch on %s!!\n", path)
 		TerminateProcess(pid)
 	}
 

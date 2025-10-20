@@ -31,12 +31,14 @@ func heartbeatListener(wg *sync.WaitGroup, terminate chan struct{}) error {
 	}
 	defer l.Close()
 
-	fmt.Println("[heartbeat] Waiting for connection...")
+	if printLog {
+		fmt.Println("[heartbeat] Waiting for connection...")
+	}
 
 	for {
 		select {
 		case <-terminate:
-			fmt.Println("[heartbeat] Exiting listener...")
+			yellow.Log("[heartbeat] Exiting listener...")
 			return nil
 		default:
 			conn, err := l.Accept()
@@ -63,7 +65,7 @@ func heartbeatHandler(conn net.Conn, wg *sync.WaitGroup, terminate chan struct{}
 			var hb Heartbeat
 			err := binary.Read(conn, binary.LittleEndian, &hb)
 			if err != nil {
-				color.Red("\n[heartbeat] Read error: %v", err)
+				red.Log("\n[heartbeat] Read error: %v", err)
 				//continue
 				return
 			}
@@ -74,11 +76,11 @@ func heartbeatHandler(conn net.Conn, wg *sync.WaitGroup, terminate chan struct{}
 				heartbeat = heartbeat[:i]
 			}
 
-			color.Green("[heartbeat] Received %s from %d", heartbeat, hb.Pid)
+			green.Log("[heartbeat] Received %s from %d", heartbeat, hb.Pid)
 			if p, exists := processes[int(hb.Pid)]; exists {
 				p.LastHeartbeat = time.Now().Unix()
 			} else {
-				color.Green("[heartbeat] New tracked process detected (%d)", hb.Pid)
+				green.Log("[heartbeat] New tracked process detected (%d)", hb.Pid)
 				path, err := GetProcessExecutable(hb.Pid)
 				if err != nil {
 					TerminateProcess(int(hb.Pid))
@@ -93,12 +95,12 @@ func heartbeatHandler(conn net.Conn, wg *sync.WaitGroup, terminate chan struct{}
 				switch result {
 				case IS_UNSIGNED:
 					isSigned = false
-					fmt.Printf("[i] Process %d with path %s is not signed\n", hb.Pid, path)
+					white.Log("[i] Process %d with path %s is not signed\n", hb.Pid, path)
 				case HAS_SIGNATURE:
 					isSigned = true
-					color.Green("[+] Process %d with path %s is signed", hb.Pid, path)
+					green.Log("[+] Process %d with path %s is signed", hb.Pid, path)
 				case HASH_MISMATCH:
-					color.Red("[!] Signature hash mismatch in %s! (PID %d)", path, hb.Pid)
+					red.Log("[!] Signature hash mismatch in %s! (PID %d)", path, hb.Pid)
 					TerminateProcess(int(hb.Pid))
 					continue
 				}
@@ -127,12 +129,14 @@ func telemetryListener(wg *sync.WaitGroup, terminate chan struct{}) error {
 	}
 	defer l.Close()
 
-	fmt.Println("[telemetry] Waiting for connection...")
+	if printLog {
+		fmt.Println("[telemetry] Waiting for connection...")
+	}
 
 	for {
 		select {
 		case <-terminate:
-			fmt.Println("[telemetry] Exiting listener...")
+			yellow.Log("[telemetry] Exiting listener...")
 			return nil
 		default:
 			conn, err := l.Accept()
@@ -150,7 +154,7 @@ func telemetryListener(wg *sync.WaitGroup, terminate chan struct{}) error {
 func telemetryHandler(conn net.Conn, wg *sync.WaitGroup, terminate chan struct{}) {
 	defer wg.Done()
 	defer conn.Close()
-	color.Green("[telemetry] Client connected!")
+	green.Log("[telemetry] Client connected!")
 	for {
 		select {
 		case <-terminate:
@@ -170,44 +174,43 @@ func telemetryHandler(conn net.Conn, wg *sync.WaitGroup, terminate chan struct{}
 					continue
 				}
 				if err == io.EOF {
-					color.Yellow("[telemetry] Client disconnected (EOF)")
+					yellow.Log("[telemetry] Client disconnected (EOF)")
 					return
 				}
-				color.Red("[telemetry] Failed to read telemetry header: %v", err)
+				red.Log("[telemetry] Failed to read telemetry header: %v", err)
 				return
 			}
 
 			err = binary.Read(bytes.NewReader(tmhBuf), binary.LittleEndian, &tmHeader)
 			if err != nil {
-				color.Red("[telemetry] binary.Read failed on buffer: %v", err)
+				red.Log("[telemetry] binary.Read failed on buffer: %v", err)
 				continue
 			}
 			/*if n == 0 {
 				continue
 			}*/
-			fmt.Printf("Header - PID: %d, Type: %d, TimeStamp: %d, DataSize: %d\n",
-				tmHeader.Pid, tmHeader.Type, tmHeader.TimeStamp, tmHeader.DataSize)
+			//fmt.Printf("Header - PID: %d, Type: %d, TimeStamp: %d, DataSize: %d\n",
+			//tmHeader.Pid, tmHeader.Type, tmHeader.TimeStamp, tmHeader.DataSize)
 
 			// skip garbage data
 			if tmHeader.Type > 10 || tmHeader.DataSize > TM_MAX_DATA_SIZE {
-				color.Red("[telemetry] Invalid header - Type: %d, DataSize: %d (max: %d)",
+				red.Log("[telemetry] Invalid header - Type: %d, DataSize: %d (max: %d)",
 					tmHeader.Type, tmHeader.DataSize, TM_MAX_DATA_SIZE)
 				continue
 			}
 			if tmHeader.Type == TM_TYPE_EMPTY_VALUE {
 				continue
 			}
-			fmt.Printf("pid: %d\ntype: %d\nTimestamp: %d\ndataSize: %d\n", tmHeader.Pid, tmHeader.Type, tmHeader.TimeStamp, tmHeader.DataSize)
 
 			if tmHeader.DataSize <= 0 {
-				color.Yellow("[telemetry] Warning: Data size: %d", tmHeader.DataSize)
+				yellow.Log("[telemetry] Warning: Data size: %d", tmHeader.DataSize)
 			}
 			//* now read the actual data which comes after the header
 			dataBuf := make([]byte, tmHeader.DataSize)
 			conn.SetReadDeadline(time.Now().Add(5 * time.Second))
 			_, err = io.ReadFull(conn, dataBuf)
 			if err != nil {
-				color.Red("[telemetry] Failed to read data of telemetry packet: %v", err)
+				red.Log("[telemetry] Failed to read data of telemetry packet: %v", err)
 				continue
 			}
 
