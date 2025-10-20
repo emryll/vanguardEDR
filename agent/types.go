@@ -146,7 +146,7 @@ const (
 
 	MAX_API_ARGS     = 10
 	API_ARG_MAX_SIZE = 520
-	TM_HEADER_SIZE   = 16
+	TM_HEADER_SIZE   = 24
 	TM_MAX_DATA_SIZE = 67624 - TM_HEADER_SIZE
 
 	IS_UNSIGNED   = 0
@@ -176,7 +176,7 @@ type Command struct {
 type TelemetryHeader struct {
 	Pid       uint32
 	Type      uint32
-	DataSize  int64
+	DataSize  uint64
 	TimeStamp int64
 }
 
@@ -196,6 +196,7 @@ type ApiCallData struct {
 	DllName   string
 	FuncName  string
 	TimeStamp int64
+	ArgCount  uint32
 	Args      []ApiArg      // important ones max 3
 	History   []ApiCallData // sorted by timestamp
 }

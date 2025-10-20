@@ -104,12 +104,14 @@ func heartbeatHandler(conn net.Conn, wg *sync.WaitGroup, terminate chan struct{}
 				}
 				// add new process to process map
 				mu.Lock()
+				//TODO: perhaps make the other maps' values pointers as well
 				processes[int(hb.Pid)] = &Process{Path: path,
-					LastHeartbeat: time.Now().Unix(),
-					IsSigned:      isSigned,
-					APICalls:      make(map[string]ApiCallData),
-					FileEvents:    make(map[string]FileEventData),
-					RegEvents:     make(map[string]RegEventData)}
+					LastHeartbeat:  time.Now().Unix(),
+					IsSigned:       isSigned,
+					APICalls:       make(map[string]ApiCallData),
+					FileEvents:     make(map[string]FileEventData),
+					RegEvents:      make(map[string]RegEventData),
+					PatternMatches: make(map[string]*StdResult)}
 				mu.Unlock()
 			}
 		}
@@ -144,7 +146,6 @@ func telemetryListener(wg *sync.WaitGroup, terminate chan struct{}) error {
 	}
 }
 
-// TODO: add telemetry to specified process' history
 // handle individual connection
 func telemetryHandler(conn net.Conn, wg *sync.WaitGroup, terminate chan struct{}) {
 	defer wg.Done()
@@ -155,15 +156,27 @@ func telemetryHandler(conn net.Conn, wg *sync.WaitGroup, terminate chan struct{}
 		case <-terminate:
 			return
 		default:
+			conn.SetReadDeadline(time.Now().Add(1 * time.Second))
+
 			//* first read the header to get size and type of data
 			var tmHeader TelemetryHeader
 			//err := binary.Read(conn, binary.LittleEndian, &tm)
 			tmhBuf := make([]byte, TM_HEADER_SIZE)
 			_, err := io.ReadFull(conn, tmhBuf)
+			//TODO: stop listening on disconnect
 			if err != nil {
+				if netErr, ok := err.(net.Error); ok && netErr.Timeout() {
+					// Timeout is expected, continue loop to check terminate
+					continue
+				}
+				if err == io.EOF {
+					color.Yellow("[telemetry] Client disconnected (EOF)")
+					return
+				}
 				color.Red("[telemetry] Failed to read telemetry header: %v", err)
-				continue
+				return
 			}
+
 			err = binary.Read(bytes.NewReader(tmhBuf), binary.LittleEndian, &tmHeader)
 			if err != nil {
 				color.Red("[telemetry] binary.Read failed on buffer: %v", err)
@@ -172,13 +185,26 @@ func telemetryHandler(conn net.Conn, wg *sync.WaitGroup, terminate chan struct{}
 			/*if n == 0 {
 				continue
 			}*/
+			fmt.Printf("Header - PID: %d, Type: %d, TimeStamp: %d, DataSize: %d\n",
+				tmHeader.Pid, tmHeader.Type, tmHeader.TimeStamp, tmHeader.DataSize)
+
+			// skip garbage data
+			if tmHeader.Type > 10 || tmHeader.DataSize > TM_MAX_DATA_SIZE {
+				color.Red("[telemetry] Invalid header - Type: %d, DataSize: %d (max: %d)",
+					tmHeader.Type, tmHeader.DataSize, TM_MAX_DATA_SIZE)
+				continue
+			}
 			if tmHeader.Type == TM_TYPE_EMPTY_VALUE {
 				continue
 			}
 			fmt.Printf("pid: %d\ntype: %d\nTimestamp: %d\ndataSize: %d\n", tmHeader.Pid, tmHeader.Type, tmHeader.TimeStamp, tmHeader.DataSize)
 
+			if tmHeader.DataSize <= 0 {
+				color.Yellow("[telemetry] Warning: Data size: %d", tmHeader.DataSize)
+			}
 			//* now read the actual data which comes after the header
 			dataBuf := make([]byte, tmHeader.DataSize)
+			conn.SetReadDeadline(time.Now().Add(5 * time.Second))
 			_, err = io.ReadFull(conn, dataBuf)
 			if err != nil {
 				color.Red("[telemetry] Failed to read data of telemetry packet: %v", err)
