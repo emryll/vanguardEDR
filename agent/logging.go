@@ -2,7 +2,6 @@ package main
 
 import (
 	"fmt"
-	"io"
 	"log"
 	"os"
 	"time"
@@ -261,20 +260,53 @@ func (r Result) Log(scanName string, pid int) {
 	logger.Printf("\n\n")
 }
 
+// Initialize a color that can be used with custom log method
+func NewColor(c *color.Color) *Color {
+	return &Color{Color: c}
+}
+
+// Initialize everything. After this you can just call Color's Log method
 func InitializeLogger(logPath string) error {
-	var (
-		writers []io.Writer
-		err     error
-	)
+	var err error
 	logFile, err = os.OpenFile(logPath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
 	if err != nil {
 		return err
 	}
-	writers = append(writers, logFile)
-	if printLog {
-		writers = append(writers, os.Stdout)
+	writer = &DualWriter{
+		file:   logFile,
+		stdout: os.Stdout,
+		print:  printLog,
 	}
 
-	multi := io.MultiWriter(writers...)
-	logger = log.New(multi, "", log.LstdFlags|log.Lshortfile)
+	logger = log.New(writer, "", log.LstdFlags|log.Lshortfile)
+
+	white = NewColor(color.New())
+	green = NewColor(color.New(color.FgGreen))
+	red = NewColor(color.New(color.FgRed))
+	yellow = NewColor(color.New(color.FgYellow))
+	return nil
+}
+
+// required method for writer interface. Write to log file
+func (w *DualWriter) Write(p []byte) (int, error) {
+	n, err := w.file.Write(p)
+	if err != nil {
+		return n, err
+	}
+	return n, nil
+}
+
+// Log to file and optionally also print it, with color
+func (c *Color) Log(format string, args ...any) {
+	msg := fmt.Sprintf(format, args...)
+	// write to file
+	logger.Output(2, msg)
+
+	if printLog {
+		if c != nil {
+			c.Println(msg)
+		} else {
+			fmt.Println(msg)
+		}
+	}
 }

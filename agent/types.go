@@ -2,8 +2,11 @@ package main
 
 import (
 	"bytes"
+	"io"
 	"sync"
 	"unsafe"
+
+	"github.com/fatih/color"
 )
 
 const VERSION = "0.0.0-demo"
@@ -43,6 +46,17 @@ type StdResult struct {
 	Severity    int      // 0, 1, 2 (low, medium, high); only for colors, doesnt affect anything else
 	Count       int
 	TimeStamp   int64 // latest
+}
+
+// embedded for custom log method
+type Color struct {
+	*color.Color
+}
+
+type DualWriter struct {
+	file   io.Writer
+	stdout io.Writer
+	print  bool
 }
 
 // representation of a scan task for the scheduler and workers
