@@ -6,7 +6,7 @@ import (
 	"unsafe"
 )
 
-const VERSION = "0.0.0-alpha"
+const VERSION = "0.0.0-demo"
 
 type Process struct {
 	Path           string
@@ -156,6 +156,12 @@ const (
 	FILE_ACTION_DELETE = 0
 	FILE_ACTION_MODIFY = 1 << 0
 	FILE_ACTION_CREATE = 1 << 1
+
+	DUCK_BANNER    = 0
+	TOTORO_BANNER1 = 1
+	TOTORO_BANNER2 = 2
+	POLICE_BANNER  = 3
+	DEFAULT_BANNER = TOTORO_BANNER1
 )
 
 //*======================[TELEMETRY]==============================
