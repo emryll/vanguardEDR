@@ -23,7 +23,7 @@ func (p *Process) CheckApiPatterns() Result {
 		//* iterate each component of pattern
 		for i, call := range pattern.ApiCalls {
 			//* check each possible func for that component //TODO: use bitwise & and ids
-			for _, fn := range call.Funcs {
+			for _, fn := range call {
 				//TODO: make timerange check seperate function so its not so ugly
 				//* does it exist in api call history?
 				api, exists := p.APICalls[fn]
@@ -77,7 +77,7 @@ func (p *Process) CheckApiPatterns() Result {
 				if matchResult.Description != "" {
 					matchResult.Name = matchResult.Description
 				} else { // fallback, use first api as name
-					matchResult.Name = pattern.ApiCalls[0].Funcs[0]
+					matchResult.Name = pattern.ApiCalls[0][0]
 				}
 			}
 			matches.TotalScore += matchResult.Score
@@ -103,6 +103,46 @@ func (p *Process) CheckApiPatterns() Result {
 				mu.Unlock()
 			}
 		}
+	}
+	return matches
+}
+
+// returns names of each pattern match and adds them to pattern match history of process
+func CheckStaticApiPatterns(imports map[string]bool) Result {
+	var matches Result
+Patterns:
+	for _, pattern := range apiPatterns {
+		var match bool
+		//* iterate each component of pattern
+		for _, call := range pattern.ApiCalls {
+			//* check each possible func for that component //TODO: use bitwise & and ids
+			for _, fn := range call {
+				if imports[fn] {
+					match = true
+					break
+				}
+			}
+			if !match { // if one of components is missing, pattern does not match
+				continue Patterns
+			}
+		}
+		matchResult := StdResult{
+			Name:        pattern.Name,
+			Description: pattern.Description,
+			TimeStamp:   time.Now().Unix(),
+			Severity:    pattern.Severity,
+			Score:       pattern.Score,
+			Category:    pattern.Category,
+		}
+		if matchResult.Name == "" { // make sure name has a value, to not mess up logic
+			if matchResult.Description != "" {
+				matchResult.Name = matchResult.Description
+			} else { // fallback, use first api as name
+				matchResult.Name = pattern.ApiCalls[0][0]
+			}
+		}
+		matches.TotalScore += matchResult.Score
+		matches.Results = append(matches.Results, matchResult)
 	}
 	return matches
 }

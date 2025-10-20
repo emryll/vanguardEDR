@@ -209,6 +209,10 @@ func StaticScan[T int | string](target T, print bool) {
 		processes[pid].ScoreMu.Unlock()
 	}
 
+	if pid > 0 {
+		processes[pid].StaticScanDone = true
+	}
+
 	if print {
 		//* portray results
 		stars := "***************************************************************************"
@@ -546,7 +550,7 @@ func CheckForMaliciousImports(path string, file *pe.File) ([]StdResult, int, err
 	for _, fn := range importsList {
 		parts := strings.Split(fn, ":")
 		imports[parts[0]] = true
-		if entry, exists := maliciousApis[parts[0]]; exists {
+		if entry, exists := malapi[parts[0]]; exists {
 			//? all functions are added seperately to results, but not added to total yet
 			results = append(results, StdResult{Name: entry.Name, Score: entry.Score, Severity: entry.Severity, Tag: "Import", Category: entry.Tag})
 			singleFuncScore += entry.Score
@@ -562,9 +566,9 @@ func CheckForMaliciousImports(path string, file *pe.File) ([]StdResult, int, err
 		total += singleFuncScore
 	}
 	//* check api patterns
-	patternResults, patternTotal := CheckStaticApiPatterns(imports)
-	results = append(results, patternResults...)
-	total += patternTotal
+	patternResults := CheckStaticApiPatterns(imports)
+	results = append(results, patternResults.Results...)
+	total += patternResults.TotalScore
 	return results, total, nil
 }
 
