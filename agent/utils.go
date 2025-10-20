@@ -10,6 +10,7 @@ import (
 	"encoding/binary"
 	"fmt"
 	"math"
+	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -84,7 +85,7 @@ func GetProcessExecutable(pid uint32) (string, error) {
 }
 
 // remove all items in history which are < threshold
-func Cleanup[H History](history []H, threshold int64) []H {
+func Cleanup[H History[T], T any](history []H, threshold int64) []H {
 	// sort history in ascending order
 	sort.Slice(history, func(i, j int) bool {
 		return history[i].GetTime() < history[j].GetTime()
@@ -95,7 +96,7 @@ func Cleanup[H History](history []H, threshold int64) []H {
 }
 
 // find first index where timestamp > threshold
-func binarySearchExpired[H History](history []H, threshold int64) int {
+func binarySearchExpired[H History[T], T any](history []H, threshold int64) int {
 	left, right := 0, len(history)-1
 	for left <= right {
 		mid := left + (right-left)/2
@@ -111,8 +112,9 @@ func binarySearchExpired[H History](history []H, threshold int64) int {
 // ? In C, an union's memory footprint will be the size of the largest member, also, compilers
 // ? will usually add padding to reach address divisible by 8(?). For example 4B after DWORD(32bits)
 // Translate the telemetry C struct with unions to a golang struct, which std go methods fail to do
-func ParseApiTelemetryPacket(rawData []byte) ApiCallData {
+func ParseApiTelemetryPacket(rawData []byte, timestamp int64) ApiCallData {
 	var apiCall ApiCallData
+	apiCall.TimeStamp = timestamp
 	apiCall.ThreadId = binary.LittleEndian.Uint32(rawData[0:4])
 	apiCall.DllName = ReadAnsiStringValue(rawData[4 : 4+60])
 	apiCall.FuncName = ReadAnsiStringValue(rawData[64 : 64+60])
@@ -329,16 +331,6 @@ func SortMagic() {
 	})
 }
 
-func GetLongestMagic() int {
-	maxMagicLen := 0
-	for _, b := range magicToType {
-		if len(b.Bytes) > maxMagicLen {
-			maxMagicLen = len(b.Bytes)
-		}
-	}
-	return maxMagicLen
-}
-
 func GetMagic(path string, maxLen int) (string, error) {
 	file, err := os.Open(path)
 	if err != nil {
@@ -359,6 +351,23 @@ func GetMagic(path string, maxLen int) (string, error) {
 		}
 	}
 	return "Unknown", nil
+}
+
+func GetMimeType(path string) (string, error) {
+	file, err := os.Open(path)
+	if err != nil {
+		return "", err
+	}
+	defer file.Close()
+
+	buffer := make([]byte, 512)
+	n, err := file.Read(buffer)
+	if err != nil {
+		return "", err
+	}
+
+	mimeType := http.DetectContentType(buffer[:n])
+	return mimeType, nil
 }
 
 func ComputeFileSha256(path string) (string, error) {
@@ -391,6 +400,14 @@ func GetEntropy(data []byte) float64 {
 		}
 	}
 	return entropy
+}
+
+func GetEntropyOfFile(path string) (float64, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return 0.0, err
+	}
+	return GetEntropy(data), nil
 }
 
 func runPowerShell(command string) (string, error) {

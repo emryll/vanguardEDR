@@ -45,7 +45,7 @@ func LoadYaraRulesFromFolder(path string) (*yara.Rules, *yara.Scanner, error) {
 
 			err = c.AddSource(string(data))
 			if err != nil {
-				color.Red("[!] Failed to add source!\n\tError: %v")
+				color.Red("[!] Failed to add source!\n\tError: %v", err)
 				return err
 			}
 
@@ -178,8 +178,10 @@ func BasicMemoryScan(pid uint32, scanner *yara.Scanner) (Result, error) {
 		if printLog {
 			fmt.Printf("\n[*] Scanned RWX memory of process %d\n", pid)
 		}
-		results.Results = append(results.Results, rwxResults...)
-		results.TotalScore += results.Results[len(results.Results)-1].Score
+		if len(results.Results) > 0 {
+			results.Results = append(results.Results, rwxResults...)
+			results.TotalScore += results.Results[len(results.Results)-1].Score
+		}
 	}
 	textResults, textErr := ScanMainModuleText(hProcess, scanner)
 	if textErr != nil {
@@ -188,8 +190,10 @@ func BasicMemoryScan(pid uint32, scanner *yara.Scanner) (Result, error) {
 		if printLog {
 			fmt.Printf("\n[*] Scanned main module's .text section of process %d\n", pid)
 		}
-		results.Results = append(results.Results, textResults...)
-		results.TotalScore += results.Results[len(results.Results)-1].Score
+		if len(results.Results) > 0 {
+			results.Results = append(results.Results, textResults...)
+			results.TotalScore += results.Results[len(results.Results)-1].Score
+		}
 	}
 
 	//TODO: add to process history

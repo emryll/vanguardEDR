@@ -93,8 +93,43 @@ func (header TelemetryHeader) Log(dataBuf []byte) {
 		}
 
 		//* Parse packet and add to process' API call history
-		apiCall := ParseApiTelemetryPacket(dataBuf)
-		apiCall.TimeStamp = header.TimeStamp
+		apiCall := ParseApiTelemetryPacket(dataBuf, header.TimeStamp)
+		if _, exists := processes[int(header.Pid)]; !exists {
+			if header.Pid <= 0 || header.Pid > 1000000 {
+				return
+			}
+
+			var signed bool
+			path, err := GetProcessExecutable(uint32(header.Pid))
+			if err != nil {
+				color.Red("\n[!] Failed to get executable path of process %d", header.Pid)
+				fmt.Printf("\tError: %v\n", err)
+			} else {
+				signedstatus, err := IsSignatureValid(path)
+				if err != nil {
+					color.Red("\n[!] Failed to check digital certificate!")
+					fmt.Printf("\tError: %v\n", err)
+				} else {
+					switch signedstatus {
+					case IS_UNSIGNED:
+						signed = false
+					case HASH_MISMATCH:
+						color.Red("\n[!] Hash mismatch in process %d!", header.Pid)
+						TerminateProcess(int(header.Pid))
+					case HAS_SIGNATURE:
+						signed = true
+					}
+				}
+			}
+			processes[int(header.Pid)] = &Process{
+				Path:           path,
+				IsSigned:       signed,
+				APICalls:       make(map[string]ApiCallData),
+				FileEvents:     make(map[string]FileEventData),
+				RegEvents:      make(map[string]RegEventData),
+				PatternMatches: make(map[string]*StdResult),
+			}
+		}
 		mu.Lock()
 		processes[int(header.Pid)].PushToApiCallHistory(apiCall)
 		mu.Unlock()
