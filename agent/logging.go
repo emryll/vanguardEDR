@@ -2,6 +2,9 @@ package main
 
 import (
 	"fmt"
+	"io"
+	"log"
+	"os"
 	"time"
 
 	"github.com/fatih/color"
@@ -86,11 +89,7 @@ func (header TelemetryHeader) Log(dataBuf []byte) {
 	case TM_TYPE_EMPTY_VALUE:
 		return
 	case TM_TYPE_API_CALL:
-		head := fmt.Sprintf("\n\n[%s] PID: %d, new API call\n", formatted, header.Pid)
-		logFile.WriteString(head)
-		if printLog {
-			fmt.Printf(head)
-		}
+		logger.Printf("\n\n[%s] PID: %d, new API call\n", formatted, header.Pid)
 
 		//* Parse packet and add to process' API call history
 		apiCall := ParseApiTelemetryPacket(dataBuf, header.TimeStamp)
@@ -232,11 +231,9 @@ func (r Result) Log(scanName string, pid int) {
 		} else {
 			name = m.Name
 		}
-		match := fmt.Sprintf("[%s] %s (+%d)\n", formatted, name, m.Score)
-		logFile.WriteString(match)
+		logger.Printf("[%s] %s (+%d)\n", formatted, name, m.Score)
 		if m.Description != "" {
-			desc := fmt.Sprintf("\t[?] %s\n", m.Description)
-			logFile.WriteString(desc)
+			logger.Printf("\t[?] %s\n", m.Description)
 		}
 		if len(m.Category) > 0 {
 			categories := "\tCategory: "
@@ -247,7 +244,7 @@ func (r Result) Log(scanName string, pid int) {
 				}
 			}
 			categories += "\n"
-			logFile.WriteString(categories)
+			logger.Printf(categories)
 		}
 		//* update process' history
 		if pidExists {
@@ -261,5 +258,23 @@ func (r Result) Log(scanName string, pid int) {
 			mu.Unlock()
 		}
 	}
-	logFile.WriteString("\n\n")
+	logger.Printf("\n\n")
+}
+
+func InitializeLogger(logPath string) error {
+	var (
+		writers []io.Writer
+		err     error
+	)
+	logFile, err = os.OpenFile(logPath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+	if err != nil {
+		return err
+	}
+	writers = append(writers, logFile)
+	if printLog {
+		writers = append(writers, os.Stdout)
+	}
+
+	multi := io.MultiWriter(writers...)
+	logger = log.New(multi, "", log.LstdFlags|log.Lshortfile)
 }
