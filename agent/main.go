@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"log"
 	"os"
 	"strings"
@@ -9,6 +10,7 @@ import (
 
 	yara "github.com/VirusTotal/yara-x/go"
 	"github.com/chzyer/readline"
+	"github.com/fatih/color"
 )
 
 var (
@@ -183,12 +185,9 @@ Cli:
 		default:
 		}
 		// main loop code here
-		command, err := rl.Readline()
-		if err != nil {
-			red.Log("\n[!] Failed to read input!")
-			white.Log("\tError: %v\n", err)
-			continue
-		}
+		var command string
+		color.Green(" $ ")
+		fmt.Scan(&command)
 		tokens := strings.Fields(command)
 		cli_parse(tokens)
 	}

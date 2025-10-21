@@ -19,21 +19,23 @@ import (
 // Errors will be logged in the function, not returned. It is intended
 func StaticScan[T int | string](target T, print bool) {
 	var (
-		path string
-		pid  = 0
+		pid       = 0
+		pidExists bool
+		path      string
 	)
 	// check if target is path or pid and handle it
 	switch v := any(target).(type) {
 	case int:
 		exe, err := GetProcessExecutable(uint32(v))
 		if err != nil {
-			red.Log("\n[!] Failed to find executable path of process %d!", v)
+			red.Log("\n[!] Failed to find executable path of process %d!\n", v)
 			white.Log("\tError: %v\n", err)
 		}
 		path = exe
 		//? only save pid if its a tracked process, for purpose of adding results to process object
 		if _, exists := processes[v]; exists {
 			pid = v
+			pidExists = true
 		}
 	case string:
 		path = v
@@ -41,7 +43,7 @@ func StaticScan[T int | string](target T, print bool) {
 
 	// check if path is valid
 	if _, err := os.Stat(path); err != nil {
-		red.Log("\n[!] %s could not be found, ensure the path is correct", path)
+		red.Log("\n[!] %s could not be found, ensure the path is correct\n", path)
 		white.Log("\tError: %v\n", err)
 		return
 	}
@@ -53,7 +55,6 @@ func StaticScan[T int | string](target T, print bool) {
 		total           = 0
 		isPe            = false
 		file            *pe.File
-		results         = []StdResult{}
 		importedFuncs   = []StdResult{}
 		importPatterns  = []StdResult{}
 		malimpResults   = []StdResult{}
@@ -70,13 +71,17 @@ func StaticScan[T int | string](target T, print bool) {
 	maxMagicLen := len(magicToType[0].Bytes)
 	magic, err := GetMagic(path, maxMagicLen)
 	if err != nil {
-		red.Log("\n[!] Failed to read magic bytes of %s!", path)
+		red.Log("\n[!] Failed to read magic bytes of %s!\n", path)
 		white.Log("\tError: %v\n", err)
+	}
+
+	if strings.HasPrefix(strings.ToLower(magic), "dos mz / pe file") {
+		isPe = true
 	}
 
 	mbAuthKey := os.Getenv("MALWAREBAZAAR_KEY")
 	if mbAuthKey == "" {
-		red.Log("\n[!] Failed to get malwarebazaar API auth key")
+		red.Log("\n[!] Failed to get malwarebazaar API auth key\n")
 		fmt.Println("\tSet MALWAREBAZAAR_KEY environment variable to your API key")
 		fmt.Println("\tGet one for free at https://auth.abuse.ch/user/me")
 	}
@@ -85,18 +90,21 @@ func StaticScan[T int | string](target T, print bool) {
 	if scanner != nil {
 		yaraResults, err = YaraScanFile(scanner, path)
 		if err != nil {
-			red.Log("\n[!] Failed to perform YARA scan on file!\n\tError: %v", err)
+			red.Log("\n[!] Failed to perform YARA scan on file!\n")
+			white.Log("\tError: %v\n", err)
 		}
 		for _, match := range yaraResults {
 			// this is fine even when target is path, because pid variable will be 0,
 			// and process 0 is obviously, not going to be tracked. Nothing will happen
 			//* log
-			if _, matchExists := processes[pid].PatternMatches["STATIC:"+match.Name]; !matchExists {
-				mu.Lock()
-				processes[pid].PatternMatches["STATIC:"+match.Name] = &match
-				processes[pid].StaticScore += match.Score
-				processes[pid].TotalScore += match.Score
-				mu.Unlock()
+			if pidExists {
+				if _, matchExists := processes[pid].PatternMatches["STATIC:"+match.Name]; !matchExists {
+					mu.Lock()
+					processes[pid].PatternMatches["STATIC:"+match.Name] = &match
+					processes[pid].StaticScore += match.Score
+					processes[pid].TotalScore += match.Score
+					mu.Unlock()
+				}
 			}
 			total += match.Score
 		}
@@ -105,7 +113,8 @@ func StaticScan[T int | string](target T, print bool) {
 	if isPe {
 		file, err = pe.Open(path)
 		if err != nil {
-			red.Log("[!] Failed to open %s: %v", path, err)
+			red.Log("[!] Failed to open %s\n", path)
+			white.Log("\tError: %v\n", err)
 			return
 		}
 		defer file.Close()
@@ -113,18 +122,20 @@ func StaticScan[T int | string](target T, print bool) {
 		if len(apiPatterns) > 0 || len(malapi) > 0 {
 			malimpResults, malScore, err = CheckForMaliciousImports(path, file)
 			if err != nil {
-				red.Log("[!] Failed to check imports!\n\tError: %v", err)
+				red.Log("[!] Failed to check imports!\n")
+				white.Log("\tError: %v\n", err)
 			}
-			results = append(results, malimpResults...)
 			total += malScore
 			//* log
 			for _, match := range malimpResults {
-				if _, matchExists := processes[pid].PatternMatches["STATIC:"+match.Name]; !matchExists {
-					mu.Lock()
-					processes[pid].PatternMatches["STATIC:"+match.Name] = &match
-					processes[pid].StaticScore += match.Score
-					processes[pid].TotalScore += match.Score
-					mu.Unlock()
+				if pidExists {
+					if _, matchExists := processes[pid].PatternMatches["STATIC:"+match.Name]; !matchExists {
+						mu.Lock()
+						processes[pid].PatternMatches["STATIC:"+match.Name] = &match
+						processes[pid].StaticScore += match.Score
+						processes[pid].TotalScore += match.Score
+						mu.Unlock()
+					}
 				}
 			}
 		}
@@ -142,12 +153,33 @@ func StaticScan[T int | string](target T, print bool) {
 
 		proxyDllResults, proxyScore, err = CheckForProxyDll(path, file)
 		if err != nil {
-			color.Red("[!] Failed to check if %s is a proxy DLL!\n\tError: %v", err)
+			red.Log("[!] Failed to check if %s is a proxy DLL!\n", path)
+			white.Log("\tError: %v\n", err)
 		}
-		results = append(results, proxyDllResults...)
 		total += proxyScore
 		//* log
 		for _, match := range proxyDllResults {
+			if pidExists {
+				if _, matchExists := processes[pid].PatternMatches["STATIC:"+match.Name]; !matchExists {
+					mu.Lock()
+					processes[pid].PatternMatches["STATIC:"+match.Name] = &match
+					processes[pid].StaticScore += match.Score
+					processes[pid].TotalScore += match.Score
+					mu.Unlock()
+				}
+			}
+		}
+	}
+
+	streamResults, streamScore, err := CheckStreams(path)
+	if err != nil {
+		red.Log("[!] Failed to check alternative data streams!\n")
+		white.Log("\tError: %v\n", err)
+	}
+	total += streamScore
+	//* log
+	for _, match := range streamResults {
+		if pidExists {
 			if _, matchExists := processes[pid].PatternMatches["STATIC:"+match.Name]; !matchExists {
 				mu.Lock()
 				processes[pid].PatternMatches["STATIC:"+match.Name] = &match
@@ -158,38 +190,23 @@ func StaticScan[T int | string](target T, print bool) {
 		}
 	}
 
-	streamResults, streamScore, err := CheckStreams(path)
-	if err != nil {
-		red.Log("[!] Failed to check alternative data streams!\n\tError: %v", err)
-	}
-	results = append(results, streamResults...)
-	total += streamScore
-	//* log
-	for _, match := range streamResults {
-		if _, matchExists := processes[pid].PatternMatches["STATIC:"+match.Name]; !matchExists {
-			mu.Lock()
-			processes[pid].PatternMatches["STATIC:"+match.Name] = &match
-			processes[pid].StaticScore += match.Score
-			processes[pid].TotalScore += match.Score
-			mu.Unlock()
-		}
-	}
-
 	if isPe {
 		sectionResults, sectionScore, err = CheckSections(file)
 		if err != nil {
-			red.Log("[!] Failed to check sections\n\tError: %v", err)
+			red.Log("[!] Failed to check sections\n")
+			white.Log("\tError: %v\n", err)
 		}
-		results = append(results, sectionResults...)
 		total += sectionScore
 		//* log
 		for _, match := range sectionResults {
-			if _, matchExists := processes[pid].PatternMatches["STATIC:"+match.Name]; !matchExists {
-				mu.Lock()
-				processes[pid].PatternMatches["STATIC:"+match.Name] = &match
-				processes[pid].StaticScore += match.Score
-				processes[pid].TotalScore += match.Score
-				mu.Unlock()
+			if pidExists {
+				if _, matchExists := processes[pid].PatternMatches["STATIC:"+match.Name]; !matchExists {
+					mu.Lock()
+					processes[pid].PatternMatches["STATIC:"+match.Name] = &match
+					processes[pid].StaticScore += match.Score
+					processes[pid].TotalScore += match.Score
+					mu.Unlock()
+				}
 			}
 		}
 	}
@@ -198,18 +215,17 @@ func StaticScan[T int | string](target T, print bool) {
 	if total > MAX_STATIC_SCORE {
 		total = MAX_STATIC_SCORE
 	}
-	if processes[pid].StaticScore > MAX_STATIC_SCORE {
-		processes[pid].ScoreMu.Lock()
-		processes[pid].StaticScore = MAX_STATIC_SCORE
-		processes[pid].ScoreMu.Unlock()
-	}
-	if processes[pid].TotalScore > MAX_PROCESS_SCORE {
-		processes[pid].ScoreMu.Lock()
-		processes[pid].TotalScore = MAX_PROCESS_SCORE
-		processes[pid].ScoreMu.Unlock()
-	}
-
-	if pid > 0 {
+	if pidExists {
+		if processes[pid].StaticScore > MAX_STATIC_SCORE {
+			processes[pid].ScoreMu.Lock()
+			processes[pid].StaticScore = MAX_STATIC_SCORE
+			processes[pid].ScoreMu.Unlock()
+		}
+		if processes[pid].TotalScore > MAX_PROCESS_SCORE {
+			processes[pid].ScoreMu.Lock()
+			processes[pid].TotalScore = MAX_PROCESS_SCORE
+			processes[pid].ScoreMu.Unlock()
+		}
 		processes[pid].StaticScanDone = true
 	}
 
@@ -218,7 +234,7 @@ func StaticScan[T int | string](target T, print bool) {
 	white.Log("\n%s\n", stars)
 	if len(yaraResults) > 0 {
 		//* less important yara rules
-		white.Log("\t\t{ YARA-X pattern matches }")
+		white.Log("\t\t{ YARA-X pattern matches }\n")
 		for _, match := range yaraResults {
 			match.Log()
 		}
@@ -227,7 +243,7 @@ func StaticScan[T int | string](target T, print bool) {
 
 	//* imported funcs
 	if len(importedFuncs) > 0 {
-		white.Log("\n\t\t{ Suspicious imported functions }")
+		white.Log("\n\t\t{ Suspicious imported functions }\n")
 		for _, fn := range importedFuncs {
 			fn.Log()
 		}
@@ -236,7 +252,7 @@ func StaticScan[T int | string](target T, print bool) {
 
 	//* api patterns
 	if len(importPatterns) > 0 {
-		white.Log("\n\t\t{ Suspicious function patterns }")
+		white.Log("\n\t\t{ Suspicious function patterns }\n")
 		for _, pattern := range importPatterns {
 			pattern.Log()
 		}
@@ -245,7 +261,7 @@ func StaticScan[T int | string](target T, print bool) {
 
 	//* streams
 	if streamScore > 0 {
-		white.Log("\n\t\t{ Alternative data streams }")
+		white.Log("\n\t\t{ Alternative data streams }\n")
 		for _, stream := range streamResults {
 			stream.Log()
 		}
@@ -254,7 +270,7 @@ func StaticScan[T int | string](target T, print bool) {
 
 	//* proxy dll
 	if proxyScore > 0 {
-		white.Log("\n\t\t{ Proxy DLL analysis }")
+		white.Log("\n\t\t{ Proxy DLL analysis }\n")
 		for _, result := range proxyDllResults {
 			result.Log()
 		}
@@ -265,10 +281,11 @@ func StaticScan[T int | string](target T, print bool) {
 	if mbAuthKey != "" {
 		hl, err = LookupFileHash(path, mbAuthKey)
 		if err != nil {
-			red.Log("\n[!] Failed to lookup file hash: %v", err)
+			red.Log("\n[!] Failed to lookup file hash\n")
+			white.Log("\tError: %v\n", err)
 		} else {
 			if !hl.IsEmpty() {
-				white.Log("\n\t\t{ Hash lookup }")
+				white.Log("\n\t\t{ Hash lookup }\n")
 				hl.Print()
 				white.Log("\n%s\n", stars)
 			}
@@ -281,7 +298,8 @@ func StaticScan[T int | string](target T, print bool) {
 	//* mime type
 	mime, err := GetMimeType(path)
 	if err != nil {
-		red.Log("[!] Failed to get MIME type!\n\tError: %v", err)
+		red.Log("\n[!] Failed to get MIME type!\n")
+		white.Log("\tError: %v\n", err)
 	} else {
 		white.Log("\tMIME type: %s\n", mime)
 	}
@@ -291,7 +309,8 @@ func StaticScan[T int | string](target T, print bool) {
 	//* check digital cert
 	r, err := IsSignatureValid(path)
 	if err != nil {
-		red.Log("\n[!] Failed to check digital certificate!\n\tError: %v", err)
+		red.Log("\n[!] Failed to check digital certificate!\n")
+		white.Log("\tError: %v\n", err)
 	} else {
 		switch r {
 		case 0:
@@ -309,17 +328,17 @@ func StaticScan[T int | string](target T, print bool) {
 		green.Log("\t[*] ")
 		white.Log("Total score from static analysis of %s:\n", baseName)
 		yellow.Log("\t\t\t%d", total)
-		green.Log("/100, looks quite normal.")
+		green.Log("/100, looks quite normal.\n")
 	case total < 50:
 		yellow.Log("\t[*] ")
 		white.Log("Total score from static analysis of %s:\n", baseName)
 		yellow.Log("\t\t\t%d", total)
-		yellow.Log("/100, moderately suspicious...")
+		yellow.Log("/100, moderately suspicious...\n")
 	case total < 70:
 		yellow.Log("\t[*] ")
 		white.Log("Total score from static analysis of %s:\n", baseName)
 		yellow.Log("\t\t\t%d", total)
-		yellow.Log("/100, looks quite suspicious!")
+		yellow.Log("/100, looks quite suspicious!\n")
 	case total >= 70:
 		red.Log("\t[*] ")
 		white.Log("Total score from static analysis of %s:\n", baseName)

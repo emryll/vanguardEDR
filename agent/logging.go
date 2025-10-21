@@ -82,7 +82,7 @@ func (header TelemetryHeader) Log(dataBuf []byte) {
 	case TM_TYPE_EMPTY_VALUE:
 		return
 	case TM_TYPE_API_CALL:
-		white.Log("\n\nPID: %d, new API call\n", formatted, header.Pid)
+		white.Log("\n\nPID: %d, new API call\n", header.Pid)
 
 		//* Parse packet and add to process' API call history
 		apiCall := ParseApiTelemetryPacket(dataBuf, header.TimeStamp)
@@ -273,9 +273,9 @@ func (c *Color) Log(format string, args ...any) {
 
 	if printLog {
 		if c != nil {
-			c.Println(msg)
+			c.Print(msg)
 		} else {
-			fmt.Println(msg)
+			fmt.Print(msg)
 		}
 	}
 	logMu.Unlock()
