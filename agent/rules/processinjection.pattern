@@ -1,0 +1,44 @@
+[
+  {
+    "name": "Classic Process Injection",
+    "description": "Run shellcode appearing as different program",
+    "severity": 2,
+    "score": 25,
+    "api_calls": [
+    ["OpenProcess", "OpenProcessA", "OpenProcessW"],
+    ["VirtualAllocEx", "VirtualAlloc2"],
+    ["WriteProcessMemory", "NtWriteVirtualMemory"],
+    ["CreateRemoteThread", "CreateRemoteThreadEx", "NtCreateThread", "NtCreateThreadEx"]
+    ]
+  },
+  {
+    "name": "Classic DLL injection",
+    "description": "Force a different program to load a DLL and run code from it",
+    "severity": 2,
+    "score": 25,
+    "api_calls": [
+    ["not_ready"],
+    ["not_ready"]
+    ]
+  },
+  {
+    "name": "Atom Bombing (Process injection)",
+    "description": "Run shellcode appearing as different program, by abusing atom tables and APC",
+    "severity": 2,
+    "score": 25,
+    "api_calls": [
+    ["not_ready"],
+    ["not_ready"]
+    ]
+  },
+  {
+    "name": "APC Injection (Process injection)",
+    "description": "",
+    "severity": 2,
+    "score": 25,
+    "api_calls": [
+    ["not_ready"],
+    ["not_ready"]
+    ]
+  }
+]

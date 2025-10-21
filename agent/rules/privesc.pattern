@@ -1,0 +1,12 @@
+[
+  {
+    "name": "Priviledge Escalation (token duplication)",
+    "description": "Abuse access tokens to elevate privileges"
+    "severity": 1,
+    "score": 15,
+    "api_calls": [
+      ["DuplicateToken", "DuplicateTokenEx"], // part 1
+      ["ImpersonateLoggedOnUser", "SetThreadToken", "CreateProcessAsUserA", "CreateProcessAsUserW", "CreateProcessWithTokenA", "CreateProcessWithTokenW"], // part 2
+    ]
+  },
+]

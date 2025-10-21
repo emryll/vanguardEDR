@@ -1,0 +1,1387 @@
+[
+  {
+    "name": "ConnectNamedPipe",
+    "severity": 1,
+    "tag": ["helper"]
+  },
+  {
+    "name": "CopyFileA",
+    "severity": 0,
+    "tag": ["helper"]
+  },
+  {
+    "name": "CreateFileA",
+    "severity": 0,
+    "tag": ["helper"]
+  },
+  {
+    "name": "CreateMutexA",
+    "severity": 1,
+    "tag": ["helper"]
+  },
+  {
+    "name": "CreateMutexExA",
+    "severity": 1,
+    "tag": ["helper"]
+  },
+  {
+    "name": "DeviceIoControl",
+    "severity": 1,
+    "tag": ["helper"]
+  },
+  {
+    "name": "FindResourceA",
+    "severity": 0,
+    "tag": ["helper"]
+  },
+  {
+    "name": "FindResourceExA",
+    "severity": 0,
+    "tag": ["helper"]
+  },
+  {
+    "name": "GetModuleBaseNameA",
+    "severity": 0,
+    "tag": ["Enumeration", "helper"]
+  },
+  {
+    "name": "GetModuleFileNameA",
+    "severity": 0,
+    "tag": ["helper"]
+  },
+  {
+    "name": "GetModuleFileNameExA",
+    "severity": 0,
+    "tag": ["helper"]
+  },
+  {
+    "name": "GetLogicalProcessorInformation",
+    "severity": 0,
+    "tag": ["Enumeration", "anti-debugging"]
+  },
+  {
+    "name": "GetTickCount",
+    "severity": 0,
+    "tag": ["anti-debugging"]
+  },
+  {
+    "name": "OutputDebugStringA",
+    "severity": 1,
+    "tag": ["anti-debugging"]
+  },
+  {
+    "name": "CheckRemoteDebuggerPresent",
+    "severity": 1,
+    "tag": ["anti-debugging"]
+  },
+  {
+    "name": "Sleep",
+    "severity": 0,
+    "tag": ["anti-debugging"]
+  },
+  {
+    "name": "GetSystemTime",
+    "severity": 0,
+    "tag": ["Enumeration", "anti-debugging"]
+  },
+  {
+    "name": "GetComputerNameA",
+    "severity": 0,
+    "tag": ["Enumeration", "anti-debugging"]
+  },
+  {
+    "name": "SleepEx",
+    "severity": 0,
+    "tag": ["anti-debugging"]
+  },
+  {
+    "name": "IsDebuggerPresent",
+    "severity": 1,
+    "tag": ["anti-debugging"]
+  },
+  {
+    "name": "GetUserNameA",
+    "severity": 0,
+    "tag": ["Enumeration", "anti-debugging"]
+  },
+  {
+    "name": "NtQueryInformationProcess",
+    "severity": 1,
+    "tag": ["Enumeration", "anti-debugging"]
+  },
+  {
+    "name": "ExitWindowsEx",
+    "severity": 1,
+    "tag": ["anti-debugging"]
+  },
+  {
+    "name": "FindWindowA",
+    "severity": 1,
+    "tag": ["anti-debugging"]
+  },
+  {
+    "name": "FindWindowExA",
+    "severity": 1,
+    "tag": ["anti-debugging"]
+  },
+  {
+    "name": "GetForegroundWindow",
+    "severity": 0,
+    "tag": ["anti-debugging"]
+  },
+  {
+    "name": "GetTickCount64",
+    "severity": 0,
+    "tag": ["anti-debugging"]
+  },
+  {
+    "name": "QueryPerformanceFrequency",
+    "severity": 0,
+    "tag": ["anti-debugging"]
+  },
+  {
+    "name": "QueryPerformanceCounter",
+    "severity": 0,
+    "tag": ["anti-debugging"]
+  },
+  {
+    "name": "GetNativeSystemInfo",
+    "severity": 0,
+    "tag": ["Enumeration", "anti-debugging"]
+  },
+  {
+    "name": "RtlGetVersion",
+    "severity": 0,
+    "tag": ["Enumeration", "anti-debugging"]
+  },
+  {
+    "name": "GetSystemTimeAsFileTime",
+    "severity": 0,
+    "tag": ["Enumeration", "anti-debugging"]
+  },
+  {
+    "name": "CountClipboardFormats",
+    "severity": 0,
+    "tag": ["anti-debugging"]
+  },
+  {
+    "name": "CryptAcquireContextA",
+    "severity": 0,
+    "tag": ["ransomware"]
+  },
+  {
+    "name": "EncryptFileA",
+    "severity": 1,
+    "tag": ["ransomware"]
+  },
+  {
+    "name": "CryptEncrypt",
+    "severity": 1,
+    "tag": ["ransomware"]
+  },
+  {
+    "name": "CryptDecrypt",
+    "severity": 1,
+    "tag": ["ransomware"]
+  },
+  {
+    "name": "CryptCreateHash",
+    "severity": 0,
+    "tag": ["Ransomware", "Evasion"]
+  },
+  {
+    "name": "CryptHashData",
+    "severity": 0,
+    "tag": ["Ransomware", "Evasion"]
+  },
+  {
+    "name": "CryptDeriveKey",
+    "severity": 0,
+    "tag": ["ransomware"]
+  },
+  {
+    "name": "CryptSetKeyParam",
+    "severity": 0,
+    "tag": ["ransomware"]
+  },
+  {
+    "name": "CryptGetHashParam",
+    "severity": 0,
+    "tag": ["ransomware"]
+  },
+  {
+    "name": "CryptDestroyKey",
+    "severity": 0,
+    "tag": ["ransomware"]
+  },
+  {
+    "name": "CryptGenRandom",
+    "severity": 0,
+    "tag": ["ransomware"]
+  },
+  {
+    "name": "DecryptFileA",
+    "severity": 1,
+    "tag": ["ransomware"]
+  },
+  {
+    "name": "FlushEfsCache",
+    "severity": 0,
+    "tag": ["ransomware"]
+  },
+  {
+    "name": "GetLogicalDrives",
+    "severity": 0,
+    "tag": ["Enumeration", "Anti-debugging", "helper", "ransomware"]
+  },
+  {
+    "name": "GetDriveTypeA",
+    "severity": 0,
+    "tag": ["Enumeration", "helper", "ransomware"]
+  },
+  {
+    "name": "CryptStringToBinary",
+    "severity": 0,
+    "tag": ["ransomware"]
+  },
+  {
+    "name": "CryptBinaryToString",
+    "severity": 0,
+    "tag": ["ransomware"]
+  },
+  {
+    "name": "CryptReleaseContext",
+    "severity": 0,
+    "tag": ["ransomware"]
+  },
+  {
+    "name": "CryptDestroyHash",
+    "severity": 0,
+    "tag": ["ransomware"]
+  },
+  {
+    "name": "EnumSystemLocalesA",
+    "severity": 0,
+    "tag": ["Enumeration", "ransomware"]
+  },
+  {
+    "name": "CryptProtectData",
+    "severity": 1,
+    "tag": ["ransomware"]
+  },
+  {
+    "name": "CreateFileMappingA",
+    "severity": 0,
+    "tag": ["evasion"]
+  },
+  {
+    "name": "DeleteFileA",
+    "severity": 0,
+    "tag": ["evasion"]
+  },
+  {
+    "name": "GetModuleHandleA",
+    "severity": 0,
+    "tag": ["evasion"]
+  },
+  {
+    "name": "LoadLibraryA",
+    "severity": 2,
+    "tag": ["evasion"]
+  },
+  {
+    "name": "LoadLibraryExA",
+    "severity": 2,
+    "tag": ["Injection", "Evasion"]
+  },
+  {
+    "name": "LoadResource",
+    "severity": 0,
+    "tag": ["evasion"]
+  },
+  {
+    "name": "SetEnvironmentVariableA",
+    "severity": 0,
+    "tag": ["evasion"]
+  },
+  {
+    "name": "SetFileTime",
+    "severity": 0,
+    "tag": ["evasion"]
+  },
+  {
+    "name": "WaitForSingleObject",
+    "severity": 0,
+    "tag": ["evasion"]
+  },
+  {
+    "name": "SetFileAttributesA",
+    "severity": 0,
+    "tag": ["evasion"]
+  },
+  {
+    "name": "NtDelayExecution",
+    "severity": 0,
+    "tag": ["evasion"]
+  },
+  {
+    "name": "NtWaitForMultipleObjects",
+    "severity": 1,
+    "tag": ["evasion"]
+  },
+  {
+    "name": "CreateWindowExA",
+    "severity": 0,
+    "tag": ["evasion"]
+  },
+  {
+    "name": "timeSetEvent",
+    "severity": 0,
+    "tag": ["evasion"]
+  },
+  {
+    "name": "IcmpSendEcho",
+    "severity": 1,
+    "tag": ["evasion"]
+  },
+  {
+    "name": "SetWaitableTimer",
+    "severity": 0,
+    "tag": ["Anti-debugging", "evasion"]
+  },
+  {
+    "name": "CreateTimerQueueTimer",
+    "severity": 0,
+    "tag": ["evasion"]
+  },
+  {
+    "name": "CreateWaitableTimer",
+    "severity": 0,
+    "tag": ["Anti-debugging", "evasion"]
+  },
+  {
+    "name": "SetTimer",
+    "severity": 0,
+    "tag": ["Anti-debugging", "evasion"]
+  },
+  {
+    "name": "Select",
+    "severity": 0,
+    "tag": ["evasion"]
+  },
+  {
+    "name": "ImpersonateLoggedOnUser",
+    "severity": 1,
+    "tag": ["evasion"]
+  },
+  {
+    "name": "SetThreadToken",
+    "severity": 1,
+    "tag": ["evasion"]
+  },
+  {
+    "name": "SizeOfResource",
+    "severity": 0,
+    "tag": ["evasion"]
+  },
+  {
+    "name": "LockResource",
+    "severity": 0,
+    "tag": ["evasion"]
+  },
+  {
+    "name": "TimeGetTime",
+    "severity": 0,
+    "tag": ["Helper", "Anti-debugging", "evasion"]
+  },
+  {
+    "name": "UuidFromStringA",
+    "severity": 0,
+    "tag": ["Enumeration", "evasion"]
+  },
+  {
+    "name": "AttachThreadInput",
+    "severity": 1,
+    "tag": ["spying"]
+  },
+  {
+    "name": "CallNextHookEx",
+    "severity": 1,
+    "tag": ["spying"]
+  },
+  {
+    "name": "GetAsyncKeyState",
+    "severity": 1,
+    "tag": ["spying"]
+  },
+  {
+    "name": "GetClipboardData",
+    "severity": 1,
+    "tag": ["spying"]
+  },
+  {
+    "name": "GetDC",
+    "severity": 0,
+    "tag": ["spying"]
+  },
+  {
+    "name": "GetDCEx",
+    "severity": 0,
+    "tag": ["spying"]
+  },
+  {
+    "name": "GetKeyboardState",
+    "severity": 1,
+    "tag": ["spying"]
+  },
+  {
+    "name": "GetKeyState",
+    "severity": 1,
+    "tag": ["spying"]
+  },
+  {
+    "name": "GetMessageA",
+    "severity": 0,
+    "tag": ["spying"]
+  },
+  {
+    "name": "GetRawInputData",
+    "severity": 1,
+    "tag": ["spying"]
+  },
+  {
+    "name": "GetWindowDC",
+    "severity": 0,
+    "tag": ["spying"]
+  },
+  {
+    "name": "MapVirtualKeyA",
+    "severity": 0,
+    "tag": ["spying"]
+  },
+  {
+    "name": "MapVirtualKeyExA",
+    "severity": 0,
+    "tag": ["spying"]
+  },
+  {
+    "name": "PeekMessageA",
+    "severity": 0,
+    "tag": ["spying"]
+  },
+  {
+    "name": "PostMessageA",
+    "severity": 0,
+    "tag": ["spying"]
+  },
+  {
+    "name": "PostThreadMessageA",
+    "severity": 0,
+    "tag": ["spying"]
+  },
+  {
+    "name": "RegisterRawInputDevices",
+    "severity": 1,
+    "tag": ["spying"]
+  },
+  {
+    "name": "SendMessageA",
+    "severity": 1,
+    "tag": ["spying"]
+  },
+  {
+    "name": "SendMessageCallbackA",
+    "severity": 1,
+    "tag": ["spying"]
+  },
+  {
+    "name": "SendMessageTimeoutA",
+    "severity": 1,
+    "tag": ["spying"]
+  },
+  {
+    "name": "SendNotifyMessageA",
+    "severity": 1,
+    "tag": ["spying"]
+  },
+  {
+    "name": "SetWindowsHookExA",
+    "severity": 2,
+    "tag": ["spying"]
+  },
+  {
+    "name": "SetWinEventHook",
+    "severity": 1,
+    "tag": ["spying"]
+  },
+  {
+    "name": "UnhookWindowsHookEx",
+    "severity": 1,
+    "tag": ["spying"]
+  },
+  {
+    "name": "BitBlt",
+    "severity": 0,
+    "tag": ["spying"]
+  },
+  {
+    "name": "StretchBlt",
+    "severity": 0,
+    "tag": ["spying"]
+  },
+  {
+    "name": "GetKeynameTextA",
+    "severity": 0,
+    "tag": ["spying"]
+  },
+  {
+    "name": "WinExec",
+    "severity": 2,
+    "tag": ["internet"]
+  },
+  {
+    "name": "FtpPutFileA",
+    "severity": 1,
+    "tag": ["internet"]
+  },
+  {
+    "name": "HttpOpenRequestA",
+    "severity": 1,
+    "tag": ["internet"]
+  },
+  {
+    "name": "HttpSendRequestA",
+    "severity": 1,
+    "tag": ["internet"]
+  },
+  {
+    "name": "HttpSendRequestExA",
+    "severity": 1,
+    "tag": ["internet"]
+  },
+  {
+    "name": "InternetCloseHandle",
+    "severity": 0,
+    "tag": ["internet"]
+  },
+  {
+    "name": "InternetOpenA",
+    "severity": 1,
+    "tag": ["internet"]
+  },
+  {
+    "name": "InternetOpenUrlA",
+    "severity": 1,
+    "tag": ["internet"]
+  },
+  {
+    "name": "InternetReadFile",
+    "severity": 1,
+    "tag": ["internet"]
+  },
+  {
+    "name": "InternetReadFileExA",
+    "severity": 1,
+    "tag": ["internet"]
+  },
+  {
+    "name": "InternetWriteFile",
+    "severity": 1,
+    "tag": ["internet"]
+  },
+  {
+    "name": "URLDownloadToFile",
+    "severity": 1,
+    "tag": ["internet"]
+  },
+  {
+    "name": "URLDownloadToCacheFile",
+    "severity": 1,
+    "tag": ["internet"]
+  },
+  {
+    "name": "URLOpenBlockingStream",
+    "severity": 1,
+    "tag": ["internet"]
+  },
+  {
+    "name": "URLOpenStream",
+    "severity": 1,
+    "tag": ["internet"]
+  },
+  {
+    "name": "Accept",
+    "severity": 0,
+    "tag": ["internet"]
+  },
+  {
+    "name": "Bind",
+    "severity": 0,
+    "tag": ["internet"]
+  },
+  {
+    "name": "Connect",
+    "severity": 1,
+    "tag": ["internet"]
+  },
+  {
+    "name": "Gethostbyname",
+    "severity": 1,
+    "tag": ["internet"]
+  },
+  {
+    "name": "Inet_addr",
+    "severity": 0,
+    "tag": ["internet"]
+  },
+  {
+    "name": "Recv",
+    "severity": 0,
+    "tag": ["internet"]
+  },
+  {
+    "name": "Send",
+    "severity": 0,
+    "tag": ["internet"]
+  },
+  {
+    "name": "WSAStartup",
+    "severity": 0,
+    "tag": ["internet"]
+  },
+  {
+    "name": "Gethostname",
+    "severity": 0,
+    "tag": ["internet"]
+  },
+  {
+    "name": "Socket",
+    "severity": 0,
+    "tag": ["internet"]
+  },
+  {
+    "name": "WSACleanup",
+    "severity": 0,
+    "tag": ["internet"]
+  },
+  {
+    "name": "Listen",
+    "severity": 0,
+    "tag": ["internet"]
+  },
+  {
+    "name": "ShellExecuteA",
+    "severity": 2,
+    "tag": ["internet"]
+  },
+  {
+    "name": "ShellExecuteExA",
+    "severity": 2,
+    "tag": ["internet"]
+  },
+  {
+    "name": "DnsQuery_A",
+    "severity": 1,
+    "tag": ["internet"]
+  },
+  {
+    "name": "DnsQueryEx",
+    "severity": 1,
+    "tag": ["internet"]
+  },
+  {
+    "name": "CreateProcessA",
+    "severity": 0,
+    "tag": ["Injection"]
+  },
+  {
+    "name": "CreateRemoteThread",
+    "severity": 2,
+    "tag": ["Injection"]
+  },
+  {
+    "name": "CreateRemoteThreadEx",
+    "severity": 2,
+    "tag": ["Injection"]
+  },
+  {
+    "name": "GetProcAddress",
+    "severity": 1,
+    "tag": ["Enumeration", "Evasion", "Injection"]
+  },
+  {
+    "name": "GetThreadContext",
+    "severity": 1,
+    "tag": ["Injection"]
+  },
+  {
+    "name": "HeapCreate",
+    "severity": 0,
+    "tag": ["Injection"]
+  },
+  {
+    "name": "LocalAlloc",
+    "severity": 0,
+    "tag": ["Injection"]
+  },
+  {
+    "name": "MapViewOfFile",
+    "severity": 0,
+    "tag": ["Injection"]
+  },
+  {
+    "name": "MapViewOfFile2",
+    "severity": 0,
+    "tag": ["Injection"]
+  },
+  {
+    "name": "MapViewOfFile3",
+    "severity": 0,
+    "tag": ["Injection"]
+  },
+  {
+    "name": "MapViewOfFileEx",
+    "severity": 0,
+    "tag": ["Injection"]
+  },
+  {
+    "name": "OpenThread",
+    "severity": 0,
+    "tag": ["Injection"]
+  },
+  {
+    "name": "QueueUserAPC",
+    "severity": 1,
+    "tag": ["Injection"]
+  },
+  {
+    "name": "ReadProcessMemory",
+    "severity": 1,
+    "tag": ["Helper", "Injection", "Enumeration"]
+  },
+  {
+    "name": "ResumeThread",
+    "severity": 1,
+    "tag": ["Injection", "Evasion"]
+  },
+  {
+    "name": "SetProcessDEPPolicy",
+    "severity": 2,
+    "tag": ["Injection", "Evasion"]
+  },
+  {
+    "name": "SetThreadContext",
+    "severity": 2,
+    "tag": ["Injection", "Evasion"]
+  },
+  {
+    "name": "SuspendThread",
+    "severity": 1,
+    "tag": ["Injection", "Evasion"]
+  },
+  {
+    "name": "Toolhelp32ReadProcessMemory",
+    "severity": 0,
+    "tag": ["Enumeration"]
+  },
+  {
+    "name": "VirtualAlloc",
+    "severity": 0,
+    "tag": ["Helper", "Injection"]
+  },
+  {
+    "name": "VirtualAllocEx",
+    "severity": 0,
+    "tag": ["Helper", "Injection"]
+  },
+  {
+    "name": "VirtualProtect",
+    "severity": 0,
+    "tag": ["Helper", "Injection"]
+  },
+  {
+    "name": "VirtualProtectEx",
+    "severity": 0,
+    "tag": ["Helper", "Injection"]
+  },
+  {
+    "name": "WriteProcessMemory",
+    "severity": 0,
+    "tag": ["Helper", "Injection"]
+  },
+  {
+    "name": "VirtualAllocExNuma",
+    "severity": 0,
+    "tag": ["Helper", "Injection"]
+  },
+  {
+    "name": "VirtualAlloc2",
+    "severity": 0,
+    "tag": ["Helper", "Injection"]
+  },
+  {
+    "name": "VirtualAlloc2FromApp",
+    "severity": 0,
+    "tag": ["Helper", "Injection"]
+  },
+  {
+    "name": "VirtualAllocFromApp",
+    "severity": 0,
+    "tag": ["Helper", "Injection"]
+  },
+  {
+    "name": "VirtualProtectFromApp",
+    "severity": 0,
+    "tag": ["Helper", "Injection"]
+  },
+  {
+    "name": "CreateThread",
+    "severity": 0,
+    "tag": ["Helper", "Injection"]
+  },
+  {
+    "name": "OpenProcess",
+    "severity": 1,
+    "tag": ["Helper", "Injection"]
+  },
+  {
+    "name": "OpenFileMappingA",
+    "severity": 0,
+    "tag": ["Injection"]
+  },
+  {
+    "name": "GetProcessHeap",
+    "severity": 0,
+    "tag": ["Injection"]
+  },
+  {
+    "name": "GetProcessHeaps",
+    "severity": 0,
+    "tag": ["Injection"]
+  },
+  {
+    "name": "HeapAlloc",
+    "severity": 0,
+    "tag": ["Injection"]
+  },
+  {
+    "name": "HeapReAlloc",
+    "severity": 0,
+    "tag": ["Injection"]
+  },
+  {
+    "name": "GlobalAlloc",
+    "severity": 0,
+    "tag": ["Injection"]
+  },
+  {
+    "name": "AdjustTokenPrivileges",
+    "severity": 2,
+    "tag": ["Privilege Escalation"]
+  },
+  {
+    "name": "CreateProcessAsUserA",
+    "severity": 1,
+    "tag": ["Injection", "Priviledge Escalation"]
+  },
+  {
+    "name": "OpenProcessToken",
+    "severity": 1,
+    "tag": ["Priviledge Escalation"]
+  },
+  {
+    "name": "CreateProcessWithTokenW",
+    "severity": 1,
+    "tag": ["Injection", "Priviledge Escalation"]
+  },
+  {
+    "name": "NtAdjustPrivilegesToken",
+    "severity": 1,
+    "tag": ["Priviledge Escalation"]
+  },
+  {
+    "name": "NtAllocateVirtualMemory",
+    "severity": 0,
+    "tag": ["Injection"]
+  },
+  {
+    "name": "NtContinue",
+    "severity": 1,
+    "tag": ["Injection"]
+  },
+  {
+    "name": "NtCreateProcess",
+    "severity": 1,
+    "tag": ["Injection"]
+  },
+  {
+    "name": "NtCreateProcessEx",
+    "severity": 1,
+    "tag": ["Injection"]
+  },
+  {
+    "name": "NtCreateSection",
+    "severity": 2,
+    "tag": ["Injection"]
+  },
+  {
+    "name": "NtCreateThread",
+    "severity": 1,
+    "tag": ["Injection"]
+  },
+  {
+    "name": "NtCreateThreadEx",
+    "severity": 2,
+    "tag": ["Injection"]
+  },
+  {
+    "name": "NtCreateUserProcess",
+    "severity": 1,
+    "tag": ["Injection"]
+  },
+  {
+    "name": "NtDuplicateObject",
+    "severity": 1,
+    "tag": ["Injection"]
+  },
+  {
+    "name": "NtMapViewOfSection",
+    "severity": 0,
+    "tag": ["Injection"]
+  },
+  {
+    "name": "NtOpenProcess",
+    "severity": 0,
+    "tag": ["Injection"]
+  },
+  {
+    "name": "NtOpenThread",
+    "severity": 0,
+    "tag": ["Injection"]
+  },
+  {
+    "name": "NtProtectVirtualMemory",
+    "severity": 0,
+    "tag": ["Injection"]
+  },
+  {
+    "name": "NtQueueApcThread",
+    "severity": 1,
+    "tag": ["Injection"]
+  },
+  {
+    "name": "NtQueueApcThreadEx",
+    "severity": 1,
+    "tag": ["Injection"]
+  },
+  {
+    "name": "NtQueueApcThreadEx2",
+    "severity": 1,
+    "tag": ["Injection"]
+  },
+  {
+    "name": "NtReadVirtualMemory",
+    "severity": 1,
+    "tag": ["Injection"]
+  },
+  {
+    "name": "NtResumeThread",
+    "severity": 1,
+    "tag": ["Injection"]
+  },
+  {
+    "name": "NtUnmapViewOfSection",
+    "severity": 0,
+    "tag": ["Injection"]
+  },
+  {
+    "name": "NtWaitForSingleObject",
+    "severity": 0,
+    "tag": ["Helper", "Evasion", "Injection"]
+  },
+  {
+    "name": "NtWriteVirtualMemory",
+    "severity": 0,
+    "tag": ["Injection"]
+  },
+  {
+    "name": "RtlCreateHeap",
+    "severity": 1,
+    "tag": ["Injection"]
+  },
+  {
+    "name": "LdrLoadDll",
+    "severity": 1,
+    "tag": ["Injection"]
+  },
+  {
+    "name": "RtlMoveMemory",
+    "severity": 1,
+    "tag": ["Injection"]
+  },
+  {
+    "name": "RtlCopyMemory",
+    "severity": 1,
+    "tag": ["Injection"]
+  },
+  {
+    "name": "SetPropA",
+    "severity": 0,
+    "tag": ["Injection"]
+  },
+  {
+    "name": "WaitForSingleObjectEx",
+    "severity": 0,
+    "tag": ["Evasion"]
+  },
+  {
+    "name": "WaitForMultipleObjects",
+    "severity": 0,
+    "tag": ["Evasion"]
+  },
+  {
+    "name": "WaitForMultipleObjectsEx",
+    "severity": 0,
+    "tag": ["Evasion", "Anti-debugging"]
+  },
+  {
+    "name": "KeInsertQueueApc",
+    "severity": 1,
+    "tag": ["Injection"]
+  },
+  {
+    "name": "Wow64SetThreadContext",
+    "severity": 2,
+    "tag": ["Injection"]
+  },
+  {
+    "name": "NtSuspendProcess",
+    "severity": 1,
+    "tag": ["Injection"]
+  },
+  {
+    "name": "NtResumeProcess",
+    "severity": 1,
+    "tag": ["Injection"]
+  },
+  {
+    "name": "DuplicateToken",
+    "severity": 1,
+    "tag": ["Priviledge Escalation"]
+  },
+  {
+    "name": "NtReadVirtualMemoryEx",
+    "severity": 1,
+    "tag": ["Injection"]
+  },
+  {
+    "name": "CreateProcessInternal",
+    "severity": 1,
+    "tag": ["Injection", "Evasion"]
+  },
+  {
+    "name": "DebugActiveProcessStop",
+    "severity": 1,
+    "tag": ["Injection"]
+  },
+  {
+    "name": "CreateToolhelp32Snapshot",
+    "severity": 0,
+    "tag": ["Enumeration", "Anti-debugging"]
+  },
+  {
+    "name": "EnumDeviceDrivers",
+    "severity": 1,
+    "tag": ["Enumeration"]
+  },
+  {
+    "name": "EnumProcesses",
+    "severity": 1,
+    "tag": ["Enumeration"]
+  },
+  {
+    "name": "EnumProcessModules",
+    "severity": 1,
+    "tag": ["Enumeration"]
+  },
+  {
+    "name": "EnumProcessModulesEx",
+    "severity": 1,
+    "tag": ["Enumeration"]
+  },
+  {
+    "name": "FindFirstFileA",
+    "severity": 0,
+    "tag": ["Enumeration"]
+  },
+  {
+    "name": "FindNextFileA",
+    "severity": 0,
+    "tag": ["Enumeration"]
+  },
+  {
+    "name": "GetLogicalProcessorInformationEx",
+    "severity": 0,
+    "tag": ["Enumeration", "Anti-debugging"]
+  },
+  {
+    "name": "GetSystemDefaultLangId",
+    "severity": 0,
+    "tag": ["Enumeration"]
+  },
+  {
+    "name": "GetVersionExA",
+    "severity": 0,
+    "tag": ["Enumeration"]
+  },
+  {
+    "name": "GetWindowsDirectoryA",
+    "severity": 0,
+    "tag": ["Enumeration"]
+  },
+  {
+    "name": "IsWoW64Process",
+    "severity": 0,
+    "tag": ["Enumeration"]
+  },
+  {
+    "name": "Module32First",
+    "severity": 0,
+    "tag": ["Enumeration"]
+  },
+  {
+    "name": "Module32Next",
+    "severity": 0,
+    "tag": ["Enumeration"]
+  },
+  {
+    "name": "Process32First",
+    "severity": 0,
+    "tag": ["Enumeration"]
+  },
+  {
+    "name": "Process32Next",
+    "severity": 0,
+    "tag": ["Enumeration"]
+  },
+  {
+    "name": "Thread32First",
+    "severity": 0,
+    "tag": ["Enumeration"]
+  },
+  {
+    "name": "Thread32Next",
+    "severity": 0,
+    "tag": ["Enumeration"]
+  },
+  {
+    "name": "GetSystemDirectoryA",
+    "severity": 0,
+    "tag": ["Enumeration"]
+  },
+  {
+    "name": "ReadFile",
+    "severity": 0,
+    "tag": ["Enumeration"]
+  },
+  {
+    "name": "VirtualQueryEx",
+    "severity": 1,
+    "tag": ["Enumeration"]
+  },
+  {
+    "name": "GetProcessIdOfThread",
+    "severity": 1,
+    "tag": ["Enumeration"]
+  },
+  {
+    "name": "GetProcessId",
+    "severity": 1,
+    "tag": ["Enumeration"]
+  },
+  {
+    "name": "GetCurrentThread",
+    "severity": 0,
+    "tag": ["Enumeration"]
+  },
+  {
+    "name": "GetCurrentThreadId",
+    "severity": 0,
+    "tag": ["Enumeration"]
+  },
+  {
+    "name": "GetThreadId",
+    "severity": 0,
+    "tag": ["Enumeration"]
+  },
+  {
+    "name": "GetThreadInformation",
+    "severity": 1,
+    "tag": ["Enumeration"]
+  },
+  {
+    "name": "GetCurrentProcess",
+    "severity": 0,
+    "tag": ["Enumeration"]
+  },
+  {
+    "name": "GetCurrentProcessId",
+    "severity": 0,
+    "tag": ["Enumeration"]
+  },
+  {
+    "name": "SearchPathA",
+    "severity": 0,
+    "tag": ["Enumeration"]
+  },
+  {
+    "name": "GetFileTime",
+    "severity": 0,
+    "tag": ["Enumeration"]
+  },
+  {
+    "name": "GetFileAttributesA",
+    "severity": 0,
+    "tag": ["Enumeration"]
+  },
+  {
+    "name": "LookupPrivilegeValueA",
+    "severity": 1,
+    "tag": ["Enumeration"]
+  },
+  {
+    "name": "LookupAccountNameA",
+    "severity": 1,
+    "tag": ["Enumeration"]
+  },
+  {
+    "name": "GetCurrentHwProfileA",
+    "severity": 0,
+    "tag": ["Enumeration"]
+  },
+  {
+    "name": "RegEnumKeyExA",
+    "severity": 0,
+    "tag": ["Enumeration"]
+  },
+  {
+    "name": "RegEnumValueA",
+    "severity": 0,
+    "tag": ["Enumeration"]
+  },
+  {
+    "name": "RegQueryInfoKeyA",
+    "severity": 0,
+    "tag": ["Enumeration"]
+  },
+  {
+    "name": "RegQueryMultipleValuesA",
+    "severity": 0,
+    "tag": ["Enumeration"]
+  },
+  {
+    "name": "RegQueryValueExA",
+    "severity": 0,
+    "tag": ["Enumeration"]
+  },
+  {
+    "name": "NtQueryDirectoryFile",
+    "severity": 1,
+    "tag": ["Enumeration"]
+  },
+  {
+    "name": "NtQuerySystemEnvironmentValueEx",
+    "severity": 1,
+    "tag": ["Enumeration"]
+  },
+  {
+    "name": "EnumDesktopWindows",
+    "severity": 1,
+    "tag": ["Enumeration"]
+  },
+  {
+    "name": "EnumWindows",
+    "severity": 1,
+    "tag": ["Enumeration"]
+  },
+  {
+    "name": "NetShareEnum",
+    "severity": 1,
+    "tag": ["Enumeration"]
+  },
+  {
+    "name": "NetShareGetInfo",
+    "severity": 1,
+    "tag": ["Enumeration"]
+  },
+  {
+    "name": "NetShareCheck",
+    "severity": 1,
+    "tag": ["Enumeration"]
+  },
+  {
+    "name": "GetAdaptersInfo",
+    "severity": 1,
+    "tag": ["Enumeration"]
+  },
+  {
+    "name": "PathFileExistsA",
+    "severity": 0,
+    "tag": ["Enumeration"]
+  },
+  {
+    "name": "GetIpNetTable",
+    "severity": 1,
+    "tag": ["Enumeration"]
+  },
+  {
+    "name": "RegEnumKeyA",
+    "severity": 0,
+    "tag": ["Enumeration"]
+  },
+  {
+    "name": "WNetEnumResourceA",
+    "severity": 0,
+    "tag": ["Enumeration"]
+  },
+  {
+    "name": "WNetCloseEnum",
+    "severity": 0,
+    "tag": ["Enumeration"]
+  },
+  {
+    "name": "FindFirstUrlCacheEntryA",
+    "severity": 1,
+    "tag": ["Enumeration"]
+  },
+  {
+    "name": "FindNextUrlCacheEntryA",
+    "severity": 1,
+    "tag": ["Enumeration"]
+  },
+  {
+    "name": "WNetAddConnection2A",
+    "severity": 1,
+    "tag": ["Enumeration"]
+  },
+  {
+    "name": "WNetAddConnectionA",
+    "severity": 1,
+    "tag": ["Enumeration"]
+  },
+  {
+    "name": "EnumResourceTypesA",
+    "severity": 0,
+    "tag": ["Enumeration"]
+  },
+  {
+    "name": "EnumResourceTypesExA",
+    "severity": 0,
+    "tag": ["Enumeration"]
+  },
+  {
+    "name": "GetThreadLocale",
+    "severity": 0,
+    "tag": ["Enumeration"]
+  }
+]
