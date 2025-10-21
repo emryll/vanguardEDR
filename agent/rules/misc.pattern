@@ -1,0 +1,34 @@
+[
+  {
+    "name": "Enumerate processes",
+    "description": "Get process Id of specific program, very common in malware, but not inherently malicious",
+    "severity": 0,
+    "score": 10,
+    "api_calls": [
+    ["CreateToolhelp32Snapshot"],
+    ["Process32First"],
+    ["Process32Next"]
+    ]
+  },
+  {
+    "name": "Enumerate threads",
+    "description": "For example find thread(s) of specific program. Typical for some specialized low-level programs, but not for regular apps",
+    "severity": 1,
+    "score": 15,
+    "api_calls": [
+    ["CreateToolhelp32Snapshot"],
+    ["Thread32First"],
+    ["Thread32Next"]
+    ]
+  },
+  {
+    "name": "Dynamically resolve imports",
+    "description": "Common method for evasion, but these are also commonly imported by benign programs",
+    "severity": 0,
+    "score": 5,
+    "api_calls": [
+    ["GetModuleHandle", "GetModuleHandleA", "GetModuleHandleW"],
+    ["GetProcAddress"]
+    ]
+  }
+]
