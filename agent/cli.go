@@ -33,21 +33,32 @@ func cli_help() {
 // Handle a single command. Take input, parse it, and act on it
 // You can launch demo, inject, query info or start scan
 // This function takes the input, split into words.
-func cli_parse(tokens []string) {
+// Return value tells if program should exit. True means exit, false means continue
+func cli_parse(tokens []string) bool {
 	switch strings.ToLower(tokens[0]) {
 	case "help":
 		cli_help()
 
+	case "verbose":
+		if len(tokens) > 1 {
+			if tokens[1] == "off" {
+				printLog = false
+				return false
+			}
+		}
+		printLog = true
+
 	case "exit", "quit", "q":
 		// trigger terminate signal for all routines
 		close(terminate)
-		break
+		return true
 
 	case "scan", "s":
 		// scan <static|memory> <pid> [type]
 		if len(tokens) < 3 {
 			color.Red("\n[!] Not enough args!")
-			fmt.Printf("\tUsage: %s <static|memory> <pid> [type]\n", tokens[0])
+			fmt.Printf("\tUsage: %s <static|memory> <pid|path> [type]\n", tokens[0])
+			return false
 		}
 		scantype := ""
 		if len(tokens) > 3 {
@@ -62,52 +73,56 @@ func cli_parse(tokens []string) {
 		if len(tokens) < 2 {
 			color.Red("\n[!] Not enough args!")
 			fmt.Printf("\tUsage: %s <pid> [type]\n", tokens[0])
-			return
+			return false
 		}
-		pid, err := strconv.Atoi(tokens[1])
-		if err != nil {
-			color.Red("\n[!] Failed to convert \"%s\" to integer", tokens[1])
-			fmt.Printf("\tError: %v\n", err)
-			return
-		}
-
 		querytype := ""
 		if len(tokens) > 2 {
 			querytype = tokens[2]
 		}
 
-		cli_query(pid, querytype)
+		pid, err := strconv.Atoi(tokens[1])
+		if err != nil {
+			pid = 0
+			querytype = tokens[1]
+		}
+
+		fmt.Printf("[debug] pid: %d querytype: %s\n", pid, querytype)
+		err = cli_query(pid, querytype)
+		if err != nil {
+			color.Red("Error: %v", err)
+		}
 
 	case "launch", "demo":
 		if len(tokens) < 2 {
 			color.Red("\n[!] Not enough args!")
 			fmt.Printf("\tUsage: %s <path>\n", tokens[0])
-			return
+			return false
 		}
 		err := cli_launch(tokens[1])
 		if err != nil {
 			color.Red("\n[!] Failed to launch %s!", tokens[1])
 			fmt.Printf("\tError: %v\n", err)
-			return
+			return false
 		}
 
+	// TODO: test this
 	case "inject", "track", "attach":
 		if len(tokens) < 2 {
 			color.Red("\n[!] Not enough args!")
 			fmt.Printf("\tUsage: %s <pid>", tokens[0])
-			return
+			return false
 		}
 		pid, err := strconv.Atoi(tokens[1])
 		if err != nil {
 			color.Red("\n[!] \"%s\" could not be converted to an integer!", tokens[1])
 			fmt.Printf("\tError: %v\n", err)
-			return
+			return false
 		}
 
 		_, exists := processes[pid]
 		if exists {
 			fmt.Printf("[i] Process %d is already being tracked\n", pid)
-			return
+			return false
 		}
 
 		C.InjectDll(C.DWORD(pid))
@@ -123,8 +138,9 @@ func cli_parse(tokens []string) {
 
 	default:
 		color.Red("\n[!] Unknown command, you can see available commands with \"help\"")
-		return
+		return false
 	}
+	return false
 }
 
 //? For each command, there is a cli_cmd() function to
@@ -145,10 +161,11 @@ func cli_scan[T string | int](scan string, scantype string, target T) error {
 			return fmt.Errorf("Invalid PID provided to memory scan: %v", target)
 		}
 		switch scantype {
-		case "basic":
+		case "basic", "":
+			fmt.Printf("[debug] starting basic mem scan\n")
 			result, err := BasicMemoryScan(uint32(pid), scanner)
 			if err != nil {
-				red.Log("\n[!] Failed to perform basic memory scan on process %d!\n", target)
+				red.Log("\n[!] Failed to perform basic memory scan on process %d!\n", pid)
 				white.Log("\tError: %v\n", err)
 				return nil // i am only returning errors which are due to improper commandline
 			}
@@ -157,7 +174,7 @@ func cli_scan[T string | int](scan string, scantype string, target T) error {
 		case "full":
 			result, err := FullMemoryScan(uint32(pid), scanner)
 			if err != nil {
-				red.Log("\n[!] Failed to perform full memory scan on process %d!\n", target)
+				red.Log("\n[!] Failed to perform full memory scan on process %d!\n", pid)
 				white.Log("\tError: %v\n", err)
 				return nil // i am only returning errors which are due to improper commandline
 			}
@@ -176,24 +193,37 @@ func cli_query(pid int, querytype string) error {
 	// basic: cert + exe, score
 	// api calls
 	// patterns
-	entry, exists := processes[pid]
-	if !exists {
-		return fmt.Errorf("Process %d not tracked", pid)
-	}
 
 	switch querytype {
 	case "basic", "info", "": // print basic info
-		entry.PrintBasic()
+		entry, exists := processes[pid]
+		if !exists {
+			return fmt.Errorf("Process %d not tracked", pid)
+		}
+		entry.PrintBasic(pid)
 	case "api", "calls": // print tracked api calls that were used
-		white.Log("Tracked winapi functions called by process %d:\n", pid)
+		entry, exists := processes[pid]
+		if !exists {
+			return fmt.Errorf("Process %d not tracked", pid)
+		}
+		fmt.Printf("Tracked winapi functions called by process %d:\n", pid)
 		for _, data := range entry.APICalls {
-			white.Log("*\t%s!%s\n", data.DllName, data.FuncName)
+			fmt.Printf("*\t%s!%s\n", data.DllName, data.FuncName)
 		}
 	case "tracked": // list all tracked processes
+		fmt.Printf("%d tracked processes\n", len(processes))
 		for _, entry := range processes {
-			entry.PrintBasic()
+			entry.PrintBasic(pid)
 		}
 	case "matches", "matched", "patterns":
+		entry, exists := processes[pid]
+		if !exists {
+			return fmt.Errorf("Process %d not tracked", pid)
+		}
+		if len(entry.PatternMatches) == 0 {
+			fmt.Printf("No pattern matches found so far with process %d", pid)
+			return nil
+		}
 		for _, match := range entry.PatternMatches {
 			// TODO: make an option to not log this to file.
 			match.Log()
@@ -285,15 +315,15 @@ func RegisterProcess(pid int, path string) {
 	go StaticScan(pid, false) // no print
 }
 
-func (p *Process) PrintBasic() {
-	fmt.Printf("\n[*] Process %d [*]\n", p)
+func (p *Process) PrintBasic(pid int) {
+	fmt.Printf("\n[*] Process %d [*]\n", pid)
 	fmt.Printf("\tFilepath: %s", p.Path)
 	if p.IsSigned {
 		color.Green(" (signed)")
 	} else {
 		fmt.Println(" (NOT signed)")
 	}
-	fmt.Printf("\tScore: %d(/100)\n\n", p.TotalScore)
+	fmt.Printf("\tScore: %d/100\n\n", p.TotalScore)
 }
 
 func PrintBanner(banner int) {
@@ -318,8 +348,8 @@ func PrintBanner(banner int) {
 		fmt.Println("⠀⠀⠀⠀⠀⠀⠀⢸⣿⠀⠈⠁⠀⠀⠀⠀⠀⠀⠀⠀⠀⢸⡇⠀    ⠀⠀⠀⠀⠀⢸⣿⠀⠈⠁⠀⠀⠀⠀⠀⠀⠀⠀⠀⢸⡇⠀    ⠀⠀⠀⠀⠀⢸⣿⠀⠈⠁⠀⠀⠀⠀⠀⠀⠀⠀⠀⢸⡇⠀     ")
 		fmt.Println("⠀⠀⠀⠀⠀⠀⠀⠘⣿⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⣸⠁⠀   ⠀⠀⠀⠀⠀⠀⠘⣿⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⣸⠁⠀    ⠀⠀⠀⠀⠀⠘⣿⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⣸⠁⠀     ")
 		fmt.Println("⠀⠀⠀⠀⠀⠀⠀⠀⢿⣧⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⣠⠏⠀⠀  ⠀⠀⠀⠀⠀⠀⠀⠀⢿⣧⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⣠⠏⠀⠀    ⠀⠀⠀⠀⠀⠀⢿⣧⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⣠⠏⠀⠀     ")
-		fmt.Println("⠀⠀⠀⠀⠀⠀⠀⠀⠘⢿⣷⣄⠀⠀⠀⠀⠀⠀⢀⣴⠏⠀⠀⠀   ⠀⠀⠀⠀⠀⠀⠀⠘⢿⣷⣄⠀⠀⠀⠀⠀⠀⢀⣴⠏⠀⠀⠀    ⠀⠀⠀⠀⠀⠀⠀⠘⢿⣷⣄⠀⠀⠀⠀⠀⠀⢀⣴⠏⠀⠀⠀    ")
-		fmt.Println("⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠙⢿⣷⣦⣤⣤⣴⣾⠋⠁⠀⠀⠀⠀  ⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠙⢿⣷⣦⣤⣤⣴⣾⠋⠁⠀⠀⠀⠀   ⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠙⢿⣷⣦⣤⣤⣴⣾⠋⠁⠀⠀⠀⠀   ")
+		fmt.Println("⠀⠀⠀⠀⠀⠀⠀⠀⠘⢿⣷⣄⠀⠀⠀⠀⠀⠀⢀⣴⠏⠀⠀⠀   ⠀⠀⠀⠀⠀⠀⠀⠘⢿⣷⣄⠀⠀⠀⠀⠀⠀⢀⣴⠏⠀⠀⠀  ⠀⠀⠀⠀⠀⠀⠀⠘⢿⣷⣄⠀⠀⠀⠀⠀⠀⢀⣴⠏⠀⠀⠀    ")
+		fmt.Println("⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠙⢿⣷⣦⣤⣤⣴⣾⠋⠁⠀⠀⠀⠀  ⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠙⢿⣷⣦⣤⣤⣴⣾⠋⠁⠀⠀⠀⠀ ⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠙⢿⣷⣦⣤⣤⣴⣾⠋⠁⠀⠀⠀⠀   ")
 
 	case POLICE_BANNER:
 		fmt.Println("⠀⠀⠀⠀⠀⠀⠀⠀⠀⡀⠀⠀⠀⠀⠀⠀⠀⠀⢀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀  ⠀⠀⠀⠀⠀⠀⠀⠀⠀⡀⠀⠀⠀⠀⠀⠀⠀⠀⢀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀")
@@ -338,5 +368,5 @@ func PrintBanner(banner int) {
 		fmt.Println(" ⠀⢰⣶⣶⣶⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⣶⣶⣶⡆⠀⠀ ⠀⢰⣶⣶⣶⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⣶⣶⣶⡆⠀⠀")
 		fmt.Println(" ⠀⠈⠉⠉⠉⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠉⠉⠉⠁⠀⠀ ⠀⠈⠉⠉⠉⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠉⠉⠉⠁⠀⠀")
 	}
-	fmt.Printf("\n\t\t\t[ Version: %s ]\n", VERSION)
+	fmt.Printf("\n\t\t\t[ Version: %s ]\n\n", VERSION)
 }

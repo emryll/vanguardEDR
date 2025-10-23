@@ -67,16 +67,16 @@ func IsSignatureValid(path string) (int, error) {
 }
 
 func GetProcessExecutable(pid uint32) (string, error) {
-	h, err := windows.OpenProcess(windows.PROCESS_QUERY_LIMITED_INFORMATION, false, pid)
+	hProcess, err := windows.OpenProcess(windows.PROCESS_QUERY_LIMITED_INFORMATION, false, pid)
 	if err != nil {
 		return "", err
 	}
-	defer windows.CloseHandle(h)
+	defer windows.CloseHandle(hProcess)
 
 	var buf [windows.MAX_PATH]uint16
 	size := uint32(len(buf))
-	// QueryFullProcessImageName with flag 0 for Win32 path format
-	err = windows.QueryFullProcessImageName(h, 0, &buf[0], &size)
+	// flag 0 for Win32 path format
+	err = windows.QueryFullProcessImageName(hProcess, 0, &buf[0], &size)
 	if err != nil {
 		return "", err
 	}

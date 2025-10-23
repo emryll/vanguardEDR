@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bufio"
 	"fmt"
 	"log"
 	"os"
@@ -9,7 +10,6 @@ import (
 	"time"
 
 	yara "github.com/VirusTotal/yara-x/go"
-	"github.com/chzyer/readline"
 	"github.com/fatih/color"
 )
 
@@ -123,15 +123,15 @@ func PeriodicScanHandler(wg *sync.WaitGroup, priorityTasks chan Scan, tasks chan
 }
 
 func main() {
-	var (
-		wg  sync.WaitGroup
-		err error // define because of global var
-	)
-	logFile, err = os.OpenFile(logName, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+	var wg sync.WaitGroup
+
+	err := InitializeLogger(logName)
 	if err != nil {
-		red.Log("\n[!] Failed to open log: %v", err)
-		//TODO: should you return?
+		color.Red("\n[!] Failed to initialize logger!")
+		fmt.Printf("\tError: %v\n", err)
+		return
 	}
+
 	defer logFile.Close()
 	//wg.Add(5)
 	wg.Add(3)
@@ -168,14 +168,6 @@ func main() {
 	SortMagic()
 
 	//* cli loop
-	// green dollar sign via ANSI escape codes
-	prompt := " \033[32m$\033[0m "
-	rl, err := readline.New(prompt)
-	if err != nil {
-		red.Log("\n[FATAL] Failed to initialize CLI!")
-		white.Log("\tError: %v\n", err)
-		return
-	}
 	PrintBanner(DEFAULT_BANNER)
 Cli:
 	for {
@@ -185,11 +177,19 @@ Cli:
 		default:
 		}
 		// main loop code here
-		var command string
-		color.Green(" $ ")
-		fmt.Scan(&command)
+		g := color.New(color.FgGreen, color.Bold)
+		g.Print(" $ ")
+		reader := bufio.NewReader(os.Stdin)
+		command, _ := reader.ReadString('\n')
+		command = strings.TrimSpace(command)
+		if command == "" {
+			continue
+		}
 		tokens := strings.Fields(command)
-		cli_parse(tokens)
+		exit := cli_parse(tokens)
+		if exit {
+			break Cli
+		}
 	}
 	wg.Wait()
 }

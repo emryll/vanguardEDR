@@ -349,12 +349,14 @@ func LoadApiPatternsFromDisk(path string) ([]ApiPattern, error) {
 				var p []ApiPattern
 				data, err := os.ReadFile(path)
 				if err != nil {
-					red.Log("\n[!] Failed to read %s!\n\tError: %v", path, err)
+					red.Log("\n[!] Failed to read %s!\n", path)
+					white.Log("\tError: %v\n", err)
 					return nil // skip file
 				}
 				err = json.Unmarshal(data, &p)
 				if err != nil {
-					red.Log("\n[!] Failed to unmarshal %s!\n\tError: %v", path, err)
+					red.Log("\n[!] Failed to unmarshal %s!\n", path)
+					white.Log("\tError: %v\n", err)
 					return nil
 				}
 				patterns = append(patterns, p...)
@@ -365,7 +367,7 @@ func LoadApiPatternsFromDisk(path string) ([]ApiPattern, error) {
 		if err != nil {
 			return nil, fmt.Errorf("Directory walk failed: %v", err)
 		}
-		white.Log("[i] Found %d API pattern files\n", count)
+		white.Log("[i] Found %d API pattern files, for a total of %d patterns\n", count, len(patterns))
 	}
 	return patterns, nil
 }

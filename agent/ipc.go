@@ -13,7 +13,6 @@ import (
 	"time"
 
 	winio "github.com/Microsoft/go-winio"
-	"github.com/fatih/color"
 )
 
 var (
@@ -30,10 +29,6 @@ func heartbeatListener(wg *sync.WaitGroup, terminate chan struct{}) error {
 		return err
 	}
 	defer l.Close()
-
-	if printLog {
-		fmt.Println("[heartbeat] Waiting for connection...")
-	}
 
 	for {
 		select {
@@ -56,7 +51,7 @@ func heartbeatListener(wg *sync.WaitGroup, terminate chan struct{}) error {
 func heartbeatHandler(conn net.Conn, wg *sync.WaitGroup, terminate chan struct{}) {
 	defer wg.Done()
 	defer conn.Close()
-	color.Green("[heartbeat] Client connected!")
+	green.Log("[heartbeat] Client connected!\n")
 	for {
 		select {
 		case <-terminate:
@@ -65,7 +60,7 @@ func heartbeatHandler(conn net.Conn, wg *sync.WaitGroup, terminate chan struct{}
 			var hb Heartbeat
 			err := binary.Read(conn, binary.LittleEndian, &hb)
 			if err != nil {
-				red.Log("\n[heartbeat] Read error: %v", err)
+				red.Log("\n[heartbeat] Read error: %v\n", err)
 				//continue
 				return
 			}
@@ -76,11 +71,11 @@ func heartbeatHandler(conn net.Conn, wg *sync.WaitGroup, terminate chan struct{}
 				heartbeat = heartbeat[:i]
 			}
 
-			green.Log("[heartbeat] Received %s from %d", heartbeat, hb.Pid)
+			green.Log("[heartbeat] Received %s from %d\n", heartbeat, hb.Pid)
 			if p, exists := processes[int(hb.Pid)]; exists {
 				p.LastHeartbeat = time.Now().Unix()
 			} else {
-				green.Log("[heartbeat] New tracked process detected (%d)", hb.Pid)
+				green.Log("[heartbeat] New tracked process detected (%d)\n", hb.Pid)
 				path, err := GetProcessExecutable(hb.Pid)
 				if err != nil {
 					TerminateProcess(int(hb.Pid))
@@ -98,9 +93,9 @@ func heartbeatHandler(conn net.Conn, wg *sync.WaitGroup, terminate chan struct{}
 					white.Log("[i] Process %d with path %s is not signed\n", hb.Pid, path)
 				case HAS_SIGNATURE:
 					isSigned = true
-					green.Log("[+] Process %d with path %s is signed", hb.Pid, path)
+					green.Log("[+] Process %d with path %s is signed\n", hb.Pid, path)
 				case HASH_MISMATCH:
-					red.Log("[!] Signature hash mismatch in %s! (PID %d)", path, hb.Pid)
+					red.Log("[!] Signature hash mismatch in %s! (PID %d)\n", path, hb.Pid)
 					TerminateProcess(int(hb.Pid))
 					continue
 				}
@@ -129,14 +124,10 @@ func telemetryListener(wg *sync.WaitGroup, terminate chan struct{}) error {
 	}
 	defer l.Close()
 
-	if printLog {
-		fmt.Println("[telemetry] Waiting for connection...")
-	}
-
 	for {
 		select {
 		case <-terminate:
-			yellow.Log("[telemetry] Exiting listener...")
+			yellow.Log("[telemetry] Exiting listener...\n")
 			return nil
 		default:
 			conn, err := l.Accept()
@@ -154,7 +145,7 @@ func telemetryListener(wg *sync.WaitGroup, terminate chan struct{}) error {
 func telemetryHandler(conn net.Conn, wg *sync.WaitGroup, terminate chan struct{}) {
 	defer wg.Done()
 	defer conn.Close()
-	green.Log("[telemetry] Client connected!")
+	green.Log("[telemetry] Client connected!\n")
 	for {
 		select {
 		case <-terminate:
@@ -164,31 +155,26 @@ func telemetryHandler(conn net.Conn, wg *sync.WaitGroup, terminate chan struct{}
 
 			//* first read the header to get size and type of data
 			var tmHeader TelemetryHeader
-			//err := binary.Read(conn, binary.LittleEndian, &tm)
 			tmhBuf := make([]byte, TM_HEADER_SIZE)
 			_, err := io.ReadFull(conn, tmhBuf)
-			//TODO: stop listening on disconnect
 			if err != nil {
 				if netErr, ok := err.(net.Error); ok && netErr.Timeout() {
-					// Timeout is expected, continue loop to check terminate
 					continue
 				}
 				if err == io.EOF {
 					yellow.Log("[telemetry] Client disconnected (EOF)")
 					return
 				}
-				red.Log("[telemetry] Failed to read telemetry header: %v", err)
+				red.Log("[telemetry] Failed to read telemetry header\n")
+				white.Log("\tError: %v\n", err)
 				return
 			}
 
 			err = binary.Read(bytes.NewReader(tmhBuf), binary.LittleEndian, &tmHeader)
 			if err != nil {
-				red.Log("[telemetry] binary.Read failed on buffer: %v", err)
+				red.Log("[telemetry] binary.Read failed on buffer: %v\n", err)
 				continue
 			}
-			/*if n == 0 {
-				continue
-			}*/
 			//fmt.Printf("Header - PID: %d, Type: %d, TimeStamp: %d, DataSize: %d\n",
 			//tmHeader.Pid, tmHeader.Type, tmHeader.TimeStamp, tmHeader.DataSize)
 
@@ -210,7 +196,8 @@ func telemetryHandler(conn net.Conn, wg *sync.WaitGroup, terminate chan struct{}
 			conn.SetReadDeadline(time.Now().Add(5 * time.Second))
 			_, err = io.ReadFull(conn, dataBuf)
 			if err != nil {
-				red.Log("[telemetry] Failed to read data of telemetry packet: %v", err)
+				red.Log("[telemetry] Failed to read data of telemetry packet.\n")
+				white.Log("\tError: %v\n", err)
 				continue
 			}
 

@@ -529,6 +529,7 @@ int NotifyMatchAndRequestScan(char* programName, DWORD pid, YRX_SCANNER* scanner
 }
 */
 
+// inject hook to specified process, via simple dll injection
 int InjectDll(DWORD pid) {
     //* open handle to process
     HANDLE hProcess = OpenProcess(PROCESS_VM_WRITE | PROCESS_VM_OPERATION | PROCESS_CREATE_THREAD, FALSE, pid);
@@ -542,13 +543,13 @@ int InjectDll(DWORD pid) {
 
 
     //* allocate memory for dll name
-    LPVOID buffer = VirtualAllocEx(hProcess, NULL, strlen(DLL_NAME) + 1, NULL);
+    LPVOID buffer = VirtualAllocEx(hProcess, NULL, strlen(DLL_NAME) + 1, MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE);
     if (buffer == NULL) {
         return GetLastError();
     }
 
     //* write dll name to allocated memory
-    ok = WriteProcessMemory(hProcess, buffer, DLL_NAME, strlen(DLL_NAME)+1, NULL);
+    BOOL ok = WriteProcessMemory(hProcess, buffer, DLL_NAME, strlen(DLL_NAME)+1, NULL);
     if (!ok) {
         return GetLastError();
     }
