@@ -10,6 +10,8 @@ size_t GetTelemetryPacketSize(DWORD type, size_t dynamicCount) {
             return sizeof(TELEMETRY_HEADER) + sizeof(TEXT_CHECK);
         case TM_TYPE_IAT_INTEGRITY:
             return sizeof(TELEMETRY_HEADER) + (dynamicCount * sizeof(IAT_MISMATCH));
+        case TM_TYPE_GENERIC_ALERT:
+            return sizeof(TELEMETRY_HEADER) + 8 + dynamicCount + 1;
     }
     return 0;
 }
@@ -28,7 +30,9 @@ API_CALL_HEADER GetApiCallHeader(LPCSTR dllName, LPCSTR funcName, size_t argCoun
     API_CALL_HEADER header;
     header.tid = GetCurrentThreadId();
     strncpy(header.dllName, dllName, sizeof(header.dllName));
-    strncpy(header.funcName, funcName, sizeof(header.dllName));
+    header.dllName[sizeof(header.dllName)] = '\0';
+    strncpy(header.funcName, funcName, sizeof(header.funcName));
+    header.funcName[sizeof(header.funcName)] = '\0';
     header.argCount = argCount;
     return header;
 }
@@ -41,8 +45,41 @@ TEXT_CHECK GetTextIntegrityPacket(LPCSTR moduleName, BOOL match) {
         packet.result = FALSE;
     }
     strncpy(packet.module, moduleName, sizeof(packet.module));
+    packet.module[sizeof(packet.module)] = '\0';
     return packet;
 }
+
+// generic alert is in the following format:
+// first comes a size_t (64-bits) telling you the size of the string
+// after that comes a dynamically sized string capped at 1000
+BYTE* GetGenericAlertPacket(LPCSTR description) {
+    size_t size = 8 + strlen(description) + 1;
+    if (size > 1000) {
+        size = 1000;
+    }
+    BYTE* packet = (BYTE*)malloc(size);
+    memcpy(packet, &size, sizeof(size_t));
+    memcpy(packet+8, description, size-8-1);
+    packet[size-1] = '\0';
+    return packet;
+}
+
+void SendDllInjectionAlert() {
+    LPCSTR description = "DLL Injection detected! Detected thread creation attempt with LoadLibrary* as start routine. Access denied.";
+    BYTE* alert = GetGenericAlertPacket(description);
+
+    size_t packetSize = GetTelemetryPacketSize(TM_TYPE_GENERIC_ALERT, strlen(description));
+    TELEMETRY_HEADER header = GetTelemetryHeader(TM_TYPE_GENERIC_ALERT, packetSize - sizeof(TELEMETRY_HEADER));
+    BYTE* packet = (BYTE*)malloc(packetSize);
+    memcpy(packet, &header, sizeof(header));
+    memcpy(packet + sizeof(header), alert, packetSize - sizeof(header));
+    
+    DWORD dwBytesWritten;
+    WriteFile(hTelemetry, packet, packetSize, &dwBytesWritten, NULL);
+    free(alert);
+    free(packet);
+}
+
 /*
 void GetHookIntegrityTelemetryPacket(TELEMETRY* tm, int* mismatches, int mismatchCount) {
     tm.header.timeStamp = time(NULL);

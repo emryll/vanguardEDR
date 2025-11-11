@@ -1,6 +1,7 @@
 #ifndef HOOK_H
 #define HOOK_H
 
+#define STATUS_ACCESS_DENIED 0xC0000022
 #define PE_SIGNATURE 0x4550
 #define SHA256_DIGEST_LENGTH 32
 #define MAX_API_ARGS 10 
@@ -64,6 +65,7 @@ typedef enum {
     TM_TYPE_REG_EVENT      = 3,
     TM_TYPE_TEXT_INTEGRITY = 4,
     TM_TYPE_IAT_INTEGRITY = 5,
+    TM_TYPE_GENERIC_ALERT = 6,
 } TELEMETRY_TYPE;
 
 typedef enum {
@@ -140,6 +142,11 @@ typedef struct {
     LPVOID address; // this is the invalid address IAT is pointing to
 } IAT_MISMATCH;
 
+typedef struct {
+    size_t descSize;
+    char* description;
+} GENERIC_ALERT;
+
 //? instead of using an union, be more memory efficient and send only what you need
 //? in a different struct which you can just memcpy() into a buffer after the header
 /*
@@ -164,6 +171,8 @@ size_t GetTelemetryPacketSize(DWORD, size_t);
 TELEMETRY_HEADER GetTelemetryHeader(DWORD, size_t);
 API_CALL_HEADER GetApiCallHeader(LPCSTR, LPCSTR, size_t);
 TEXT_CHECK GetTextIntegrityPacket(LPCSTR, BOOL);
+BYTE* GetGenericAlertPacket(LPCSTR);
+void SendDllInjectionAlert();
 
 HANDLE InitializeComms();           // ipc.c
 void WaiterThread(); // ipc.c
@@ -216,15 +225,21 @@ typedef enum {
     HOOK_CREATE_REMOTE_THREAD_EX,
     HOOK_NT_CREATE_THREAD,
     HOOK_NT_CREATE_THREAD_EX,
+    HOOK_GET_PROC_ADDRESS,
+    HOOK_GET_MODULE_HANDLE_A,
+    HOOK_GET_MODULE_HANDLE_W,
+    HOOK_GET_MODULE_HANDLE_EX_A,
+    HOOK_GET_MODULE_HANDLE_EX_W,
+    HOOK_LOAD_LIBRARY_A,
+    HOOK_LOAD_LIBRARY_W,
+    HOOK_LOAD_LIBRARY_EX_A,
+    HOOK_LOAD_LIBRARY_EX_W,
     //HOOK_QUEUE_USER_APC,
 /*    HOOK_NT_QUEUE_APC_THREAD,
     HOOK_HEAP_ALLOC,
     HOOK_HEAP_REALLOC,
     HOOK_NT_UNMAP_VIEW,
     HOOK_NT_MAP_VIEW,
-    HOOK_GET_PROC_ADDRESS,
-    HOOK_GET_MODULE_A,
-    HOOK_GET_MODULE_W,
     HOOK_SET_WINDOWS_HOOK_EX_A,
     HOOK_SET_WINDOWS_HOOK_EX_W,
     HOOK_WIN_EXEC,
@@ -234,6 +249,11 @@ typedef enum {
     HOOK_ENCRYPT_FILE_A,
     HOOK_ENCRYPT_FILE_W,*/
 } HOOK_INDEX;
+
+//? These are for calling hooked api functions from address in the hook handler function
+//* user32.dll!MessageBoxA
+typedef int (WINAPI *MESSAGEBOXA)(HWND, LPCSTR, LPCSTR, UINT);
+int MessageBoxA_Handler(HWND, LPCSTR, LPCSTR, UINT);
 
 //? These are for calling hooked api functions from address in the hook handler function
 //* user32.dll!MessageBoxA
@@ -307,7 +327,7 @@ PCOBJECT_ATTRIBUTES, ULONG, ULONG, void*, void*, void*);
 NTSTATUS NtCreateUserProcess_Handler(PHANDLE, PHANDLE, ACCESS_MASK, ACCESS_MASK, PCOBJECT_ATTRIBUTES,
     PCOBJECT_ATTRIBUTES, ULONG, ULONG, void*, void*, void*);
 
-/*
+
 //* kernel32.dll!OpenProcessToken
 typedef BOOL (WINAPI *OPENPROCESSTOKEN)(HANDLE, DWORD, PHANDLE);
 BOOL OpenProcessToken_Handler(HANDLE, DWORD, PHANDLE);
@@ -327,7 +347,10 @@ BOOL GetThreadContext_Handler(HANDLE, LPCONTEXT);
 //* kernel32.dll!SuspendThread
 typedef DWORD (WINAPI *SUSPENDTHREAD)(HANDLE);
 DWORD SuspendThread_Handler(HANDLE);
-*/
+//* kernel32.dll!ResumeThread
+typedef DWORD (WINAPI *RESUMETHREAD)(HANDLE);
+DWORD ResumeThread_Handler(HANDLE);
+
 //* kernel32.dll!CreateRemoteThread
 typedef HANDLE (WINAPI *CREATEREMOTETHREAD)(HANDLE, LPSECURITY_ATTRIBUTES, SIZE_T,
 LPTHREAD_START_ROUTINE, LPVOID, DWORD, LPDWORD);
@@ -352,7 +375,7 @@ DWORD QueueUserAPC_Handler(PAPCFUNC, HANDLE, ULONG_PTR);
 //* kernel32.dll!QueueUserAPC2
 typedef BOOL (WINAPI *QUEUEUSERAPC2)(PAPCFUNC, HANDLE, ULONG_PTR, QUEUE_USER_APC_FLAGS);
 BOOL QueueUserAPC2_Handler(PAPCFUNC, HANDLE, ULONG_PTR, QUEUE_USER_APC_FLAGS);
-
+*/
 //* kernel32.dll!LoadLibraryA
 typedef HMODULE (WINAPI *LOADLIBRARYA)(LPCSTR);
 HMODULE LoadLibraryA_Handler(LPCSTR);
@@ -376,11 +399,11 @@ HMODULE GetModuleHandleA_Handler(LPCSTR);
 typedef HMODULE (WINAPI *GETMODULEHANDLEW)(LPCWSTR);
 HMODULE GetModuleHandleW_Handler(LPCWSTR);
 //* kernel32.dll!GetModuleHandleExA
-typedef BOOL (WINAPI *GETMODULEHANDLEEXA)(DWORD, LPCSTR, HANDLE*);
-BOOL GetModuleHandleExA_Handler(DWORD, LPCSTR, HANDLE*);
+typedef BOOL (WINAPI *GETMODULEHANDLEEXA)(DWORD, LPCSTR, HMODULE*);
+BOOL GetModuleHandleExA_Handler(DWORD, LPCSTR, HMODULE*);
 //* kernel32.dll!GetModuleHandleExW
-typedef BOOL (WINAPI *GETMODULEHANDLEEXW)(DWORD, LPCWSTR, HANDLE*);
-BOOL GetModuleHandleExW_Handler(DWORD, LPCWSTR, HANDLE*);
+typedef BOOL (WINAPI *GETMODULEHANDLEEXW)(DWORD, LPCWSTR, HMODULE*);
+BOOL GetModuleHandleExW_Handler(DWORD, LPCWSTR, HMODULE*);
 
 //* kernel32.dll!SetDefaultDllDirectories
 typedef BOOL (WINAPI *SETDEFAULTDLLDIRECTORIES)(DWORD);
@@ -392,6 +415,9 @@ HHOOK SetWindowsHookExA_Handler(int, HOOKPROC, HINSTANCE, DWORD);
 //* user32.dll!SetWindowsHookExW
 typedef HHOOK (WINAPI *SETWINDOWSHOOKEXW)(int, HOOKPROC, HINSTANCE, DWORD);
 HHOOK SetWindowsHookExW_Handler(int, HOOKPROC, HINSTANCE, DWORD);
-*/
+
+//* kernel32.dll!IsDebuggerPresent
+typedef BOOL (WINAPI *ISDEBUGGERPRESENT)();
+BOOL IsDebuggerPresent_Handler();
 
 #endif
