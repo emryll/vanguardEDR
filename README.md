@@ -1,6 +1,6 @@
 ## What is it?
-Vanguard EDR is a Endpoint Detection & Response system for Windows, which aims to detect malicious behavior on multiple endpoints, send alerts about it to a central UI and attempt to automatically stop malicious behavior from happening.
-It consists of 6 main components:
+This is a Endpoint Detection & Response system for Windows, which aims to detect malicious behavior on multiple endpoints, send alerts about it to a central UI and attempt to automatically stop malicious behavior from happening.
+The architectural design consists of 6 main components:
 - Agent; the brain of each endpoint--detects malicious behavior and handles things such as memory scans
 - Telemetry DLL; injected into each tracked process, gathers telemetry data and sends it to agent
 - ETW consumer; receives very useful info about different kinds of events happening on the machine
@@ -8,7 +8,7 @@ It consists of 6 main components:
 - Central server; gathers all endpoints' data for a centralized view and provides it to the UI, also forwards commands to agents
 - UI; provides the operator a clear centralized view of alerts, telemetry data, and control over each endpoint
 
-For the beta version detection comes from the following scans:
+For the alpha version detection comes from the following scans:
 - Static analysis of files when they are created, modified, or opened(loaded)
 - Memory scanning with YARA. Different areas of memory scanned based on context; both periodic scans and event triggered scans
 - Behavior patterns from API calls, filesystem operations, registry modification and more
@@ -26,8 +26,12 @@ These scans depend on a few types of rules: YARA rules for static and memory sca
 
 This project is still in development and not yet ready for real use.
 So far what is ready:
+- A demo mode to track a manually specified program (no driver yet, so no auto-attach)
+- API hooking and API pattern detection
+- DLL injection detection through thread startroutine address
 - Static analysis engine (integrated + standalone tool)
 - Memory scanning (utilizing YARA-X)
 - Behavioral pattern detection
 - Telemetry DLL
 - IAT hook detection
+- Simple CLI
