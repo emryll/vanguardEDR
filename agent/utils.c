@@ -565,3 +565,125 @@ int InjectDll(DWORD pid) {
     CloseHandle(hThread);
     return 0;
 }
+MEMORY_REGION* GetRemoteProcessModuleTexts(DWORD pid, size_t* modCount) {
+    MEMORY_REGION* moduleTexts = NULL;
+    DWORD numModules;
+    DWORD bytesNeeded;
+    (*modCount) = 0;
+
+    HANDLE hProcess = OpenProcess(PROCESS_QUERY_INFORMATION | PROCESS_VM_OPERATION | PROCESS_VM_READ, FALSE, pid);
+    if (hProcess == NULL) {
+        printf("[!] Failed to open process, error: %d\n", GetLastError());
+        return NULL;
+    }
+
+    // Get amount of modules loaded by the process
+    if (EnumProcessModules(hProcess, NULL, 0, &bytesNeeded)) {
+        numModules = bytesNeeded / sizeof(HMODULE);
+    } else {
+        printf("[!] Failed to get module count, error: %d\n", GetLastError());
+        return NULL;
+    }
+
+    HMODULE* hModules = (HMODULE*)malloc(bytesNeeded);
+    if (hModules == NULL) {
+        printf("[!] Failed to allocate array of module handles, size: %d\n", bytesNeeded);
+        return NULL;
+    }
+    // get the handles of all loaded modules
+    if (!EnumProcessModules(hProcess, hModules, bytesNeeded, &bytesNeeded)) {
+        printf("[!] Failed to enumerate remote process modules, error: %d\n", GetLastError());
+        free(hModules);
+        return NULL;
+    }
+
+    for (DWORD i = 0; i < numModules; i++) {
+        char baseName[MAX_PATH];
+        if (GetModuleBaseNameA(hProcess, hModules[i], baseName, MAX_PATH) == 0) {
+            printf("[!] Failed to get module name, error: %d\n", GetLastError());
+            continue;
+        }
+        //printf("[i] Found %s\n", baseName);
+
+        MODULEINFO modInfo;
+        if (!GetModuleInformation(hProcess, hModules[i], &modInfo, sizeof(modInfo))) {
+            printf("[!] Failed to get module information, error: %d\n", GetLastError());
+            continue;
+        }
+        // find section headers to get addresses
+        LPVOID baseAddress = modInfo.lpBaseOfDll;
+        if (baseAddress == NULL) {
+            printf("NULL address\n");
+            continue;
+        }
+        IMAGE_DOS_HEADER dosHeader;
+        if (!ReadProcessMemory(hProcess, baseAddress, &dosHeader, sizeof(dosHeader), NULL)) {
+            printf("[!] Failed to read DOS header of remote process, error: %d\n", GetLastError());
+            continue;
+        }
+
+        LPVOID ntHeaderAddress = baseAddress + dosHeader.e_lfanew;
+        IMAGE_NT_HEADERS ntHeader;
+        if (!ReadProcessMemory(hProcess, ntHeaderAddress, &ntHeader, sizeof(ntHeader), NULL)) {
+            printf("[!] Failed to read NT header of remote process, error: %d\n", GetLastError());
+            continue;
+        }
+
+        LPVOID sectionHeadersAddress = ntHeaderAddress + sizeof(DWORD) + sizeof(IMAGE_FILE_HEADER) + ntHeader.FileHeader.SizeOfOptionalHeader;
+        DWORD numRegions = ntHeader.FileHeader.NumberOfSections;
+
+        PIMAGE_SECTION_HEADER sectionHeaders = (PIMAGE_SECTION_HEADER)malloc(sizeof(IMAGE_SECTION_HEADER) * numRegions);
+        if (sectionHeaders == NULL) {
+            printf("[!] Failed to allocate memory for section headers\n");
+            continue;
+        }
+
+        if (!ReadProcessMemory(hProcess, sectionHeadersAddress, sectionHeaders, sizeof(IMAGE_SECTION_HEADER) * numRegions, NULL)) {
+            printf("[!] Failed to read sections headers of remote process, error: %d\n", GetLastError());
+            continue;
+        }
+
+        //printf("[debug] starting section loop...\n");
+        // loop through sections
+        for (DWORD j = 0; j < numRegions; j++) {
+            if (stricmp((char*)sectionHeaders[j].Name, ".text") != 0) {
+                continue;
+            }
+            //printf("[debug] found .text\n");
+            moduleTexts = (MEMORY_REGION*)realloc(moduleTexts, ((*modCount) + 1) * sizeof(MEMORY_REGION));
+            if (moduleTexts == NULL) {
+                printf("\n[!] Failed to realloc (%dB)\n", ((*modCount)+1)*sizeof(MEMORY_REGION));
+                return FALSE;
+            }
+            moduleTexts[(*modCount)].address = (LPVOID)((DWORD_PTR)baseAddress + sectionHeaders[j].VirtualAddress);
+            moduleTexts[(*modCount)].size = sectionHeaders[j].Misc.VirtualSize;
+            (*modCount)++;
+            break;
+        }
+        free(sectionHeaders);
+    }
+    free(hModules);
+    return moduleTexts;
+}
+
+// This will check if an address points to 
+BOOL DoesAddressPointToModule(LPVOID address, DWORD pid) {
+    MEMORY_REGION* moduleTexts = NULL;
+    size_t modCount;
+
+        moduleTexts = GetRemoteProcessModuleTexts(pid, &modCount);
+        if (moduleTexts == NULL) {
+            printf("\n[!] Failed to get list of module texts for process %d.\n", pid);
+            return FALSE;
+        }
+
+    // check if address is within a text section
+    for (int i = 0; i < modCount; i++) {
+        if (address >= moduleTexts[i].address && address < moduleTexts[i].address + moduleTexts[i].size) {
+            free(moduleTexts);
+            return TRUE;
+        }
+    }
+    free(moduleTexts);
+    return FALSE;
+}
