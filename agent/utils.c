@@ -687,3 +687,84 @@ BOOL DoesAddressPointToModule(LPVOID address, DWORD pid) {
     free(moduleTexts);
     return FALSE;
 }
+
+typedef NTSTATUS (NTAPI* QUERYTHREADINFO)(HANDLE, THREADINFOCLASS, PVOID, ULONG, PULONG);
+
+// This function will enumerate all accessible threads of a process (or 0 for all),
+// query its start routine address and then check if it points to a module's text section.
+// Additionally you may check if the start routine address points to a LoadLibrary* function.
+// Caller is responsible for freeing the resulting array of length oddCount.
+THREAD_ENTRY* ScanProcessThreads(DWORD pid, size_t* oddCount) {
+    (*oddCount) = 0;
+    THREAD_ENTRY* oddThreads = NULL;
+    HANDLE snapshot = CreateToolhelp32Snapshot(TH32CS_SNAPTHREAD, 0);
+    if (snapshot == INVALID_HANDLE_VALUE) {
+        printf("Failed to get snapshot of threads, error: %d\n", GetLastError());
+        return NULL;
+    }
+
+    THREADENTRY32 te;
+    te.dwSize = sizeof(te);
+    if (!Thread32First(snapshot, &te)) {
+        printf("Failed to enumerate first thread, error: %d", GetLastError());
+        return NULL;
+    }
+    // NtQueryInformationThread is not in headers so I manually declare and use it 
+    HMODULE ntBase = GetModuleHandle("ntdll.dll");
+    if (ntBase == INVALID_HANDLE_VALUE) {
+        printf("Failed to get handle to ntdll.dll, error: %d\n", GetLastError());
+        return NULL;
+    }
+    FARPROC NtQueryInformationThread = GetProcAddress(ntBase, "NtQueryInformationThread");
+    if (NtQueryInformationThread == NULL) {
+        printf("Failed to get address of NtQueryInformationThread, error: %d\n", GetLastError());
+        return NULL;
+    }
+    
+    do {
+        if (te.dwSize >= FIELD_OFFSET(THREADENTRY32, th32OwnerProcessID) + sizeof(te.th32OwnerProcessID)
+        && (pid == te.th32OwnerProcessID || pid == 0)) {
+
+            HANDLE hThread = OpenThread(THREAD_QUERY_INFORMATION, FALSE, te.th32ThreadID);
+            if (hThread == INVALID_HANDLE_VALUE) {
+                if (GetLastError() != ERROR_ACCESS_DENIED) {
+                    printf("Failed to open handle to thread %d, error: %d\n", te.th32ThreadID, GetLastError());
+                }
+                continue;
+            }
+
+            LPVOID startAddress;
+            NTSTATUS status = ((QUERYTHREADINFO)NtQueryInformationThread)(hThread,
+            ThreadQuerySetWin32StartAddress, &startAddress, sizeof(LPVOID), NULL);
+            if (status != STATUS_SUCCESS) {
+                printf("Failed to query thread info, error: %d\n", GetLastError());
+                CloseHandle(hThread);
+                continue;
+            }
+            CloseHandle(hThread);
+
+            BOOL result = DoesAddressPointToModule(startAddress, te.th32OwnerProcessID);
+            if (!result) {
+                THREAD_ENTRY* tmp = NULL;
+                tmp = (THREAD_ENTRY*)realloc(oddThreads, ((*oddCount)+1)*sizeof(THREAD_ENTRY));
+                if (tmp == NULL) {
+                    printf("Failed to realloc thread list to size of %dB\n", ((*oddCount)+1)*sizeof(THREAD_ENTRY));
+                    return oddThreads;
+                }
+                oddThreads = tmp;
+                oddThreads[(*oddCount)].tid = te.th32ThreadID;
+                oddThreads[(*oddCount)].pid = te.th32OwnerProcessID;
+                oddThreads[(*oddCount)].startAddress = startAddress;
+                (*oddCount)++;
+            }
+            //TODO: Stack walk and check return address of each frame
+            //TODO: check if address points to lib loading function
+        }
+    } while (Thread32Next(snapshot, &te));
+    CloseHandle(snapshot);
+    return oddThreads;
+}
+
+THREAD_ENTRY* ScanThreadsGlobally(size_t* oddCount) {
+    return ScanProcessThreads(0, oddCount);
+}
