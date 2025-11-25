@@ -19,6 +19,7 @@ typedef enum {
 } ETW_CMD_TYPE;
 
 // these enums are the event IDs
+// https://github.com/jdu2600/Windows10EtwEvents
 typedef enum {
     EVENT_FILE_CREATE = 12, // create/open
     EVENT_FILE_DELETE = 26,
@@ -26,13 +27,15 @@ typedef enum {
     EVENT_FILE_WRITE = 16,
     EVENT_FILE_RENAME = 27, // "RenamePath", rename happened
 
-    //! These reg event values are not correct
-    EVENT_REG_CREATE_KEY = 1000,
-    EVENT_REG_DELETE_KEY = 2228,
-    EVENT_REG_SET_KEY_VALUE = 2359,
-    EVENT_REG_DELETE_KEY_VALUE = 2424,
-    EVENT_REG_SET_INFO_KEY = 2752,// change key metadata (permissions, for example)
-    EVENT_REG_SET_SECURITY_KEY = 3014,
+    EVENT_REG_CREATE_KEY = 1,
+    EVENT_REG_OPEN_KEY = 2, // not used
+    EVENT_REG_DELETE_KEY = 3,
+    EVENT_REG_QUERY_KEY = 4, // not used
+    EVENT_REG_SET_KEY_VALUE = 5,
+    EVENT_REG_DELETE_KEY_VALUE = 6,
+    EVENT_REG_SET_INFO_KEY = 11, // change key metadata (permissions, for example)
+    EVENT_REG_CLOSE_KEY = 13, // not used
+    EVENT_REG_SET_SECURITY_KEY = 15,
 } ETW_EVENT_ID;
 
 // this type describes packets received by this component from agent
