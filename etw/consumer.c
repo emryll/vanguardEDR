@@ -25,7 +25,16 @@ TRACEHANDLE SessionHandle = 0;
 TRACEHANDLE traceHandle = 0;
 
 BOOL Running = TRUE;
-
+/*
+// The paths from events are wide strings, and start with something like " \Device\HarddiskVolume".
+// This function converts it to a normal ansi string path with drive letters
+LPCSTR NormalizeEventPath(WCHAR* path) {
+    //? should you also return string len?
+    //TODO: get all drive letters with GetLogicalDriveStrings
+        //TODO: query device name for this letter with QueryDosDevice
+        //TODO: compare it against path
+}
+*/
 VOID WINAPI EventCallback(PEVENT_RECORD event) {
     SYSTEMTIME st;
     FILETIME ft;
@@ -36,6 +45,7 @@ VOID WINAPI EventCallback(PEVENT_RECORD event) {
     //TODO: instead craft a telemetry packet
     //TODO: send the telemetry packet into hPipe
 
+    // demo mode: only process specific process' events
     if (singlePid && event->EventHeader.ProcessId != pid) {
         return;
     }
@@ -91,12 +101,10 @@ VOID WINAPI EventCallback(PEVENT_RECORD event) {
         }
     }
 
-    //TODO: print attached data
+    //* print attached data
     if (event->UserDataLength > 0) {
-        printf("UserDataLength %d:\n", event->UserDataLength);
+        //printf("UserDataLength %d:\n", event->UserDataLength);
         if (event->EventHeader.Flags != EVENT_HEADER_FLAG_STRING_ONLY) {
-            printf("\tUserData is not a null terminated unicode string\n");
-            
             PTRACE_EVENT_INFO info = NULL;
             ULONG infoSize = 0;
             TdhGetEventInformation(event, 0, NULL, info, &infoSize);
@@ -105,9 +113,6 @@ VOID WINAPI EventCallback(PEVENT_RECORD event) {
             if (r != ERROR_SUCCESS) {
                 printf("TdhGetEventInformation failed. r=%d, error: %d\n", r, GetLastError());
             } else {
-                printf("TdhGetEventInformation success\n");
-            
-
             for (ULONG i = 0; i < info->TopLevelPropertyCount; i++) {
                 EVENT_PROPERTY_INFO propInfo = info->EventPropertyInfoArray[i];
 
@@ -125,15 +130,43 @@ VOID WINAPI EventCallback(PEVENT_RECORD event) {
                     continue;
                 }
 
-                // Allocate buffer for the property
+                // Allocate buffer for the data
                 BYTE* buffer = (BYTE*)malloc(propertySize);
                 if (!buffer) continue;
 
                     // Now actually get the property value
                     status = TdhGetProperty(event, 0, NULL, 1, &propDesc, propertySize, buffer);
                     if (status == ERROR_SUCCESS) {
-                        printf("propInfo.nonStructType:\n\tInType: %d\n\tOutType: %d\n\tMapNameOffset: %d\n",
-                            propInfo.nonStructType.InType, propInfo.nonStructType.OutType, propInfo.nonStructType.MapNameOffset);
+                        //? Note: InType refers to the actual type, as in how the bytes are arranged (string, pointer, etc.)
+                        //?     while the OutType refers to what the data represents/how its interpreted (GUID, time, string, etc.)
+
+                        //printf("propInfo.nonStructType: %ls\n\tInType: %d\n\tOutType: %d\n\tMapNameOffset: %d\n",
+                            //propDesc.PropertyName, propInfo.nonStructType.InType, propInfo.nonStructType.OutType, propInfo.nonStructType.MapNameOffset);
+                        if (wcscmp((WCHAR*)propDesc.PropertyName, L"FileName") == 0) {
+                            wprintf(L"\tFileName: %ls\n", (WCHAR*)buffer);
+                        } else {
+                            switch (propInfo.nonStructType.InType) {
+                                case TDH_INTYPE_UNICODESTRING:
+                                    wprintf(L"\t%ls: %ls\n", propDesc.PropertyName, (WCHAR*)buffer);
+                                    break;
+                                case TDH_INTYPE_POINTER:
+                                    wprintf(L"\t%ls: 0x%p\n", propDesc.PropertyName, *(PVOID*)buffer);
+                                    break;
+                                case TDH_INTYPE_UINT32:
+                                    wprintf(L"\t%ls: %d\n", propDesc.PropertyName, *(UINT32*)buffer);
+                                    break;
+                                case TDH_INTYPE_UINT16:
+                                    wprintf(L"\t%ls: %d\n", propDesc.PropertyName, *(UINT16*)buffer);
+                                    break;
+                                case TDH_INTYPE_BOOLEAN:
+                                    wprintf(L"\t%ls: %s\n", propDesc.PropertyName, *(BOOL*)buffer ? "TRUE" : "FALSE");
+                                    break;
+                                case TDH_INTYPE_ANSISTRING:
+                                    wprintf(L"\t%ls: %s\n", propDesc.PropertyName, (char*)buffer);
+                                    break;
+                            }
+                        }
+
                     } else {
                         printf("Failed to get property %lu\n", i);
                     }
