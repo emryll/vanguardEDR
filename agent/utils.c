@@ -1,4 +1,5 @@
 #include <windows.h>
+#include <winternl.h>
 #include <psapi.h>
 #include <stdio.h>
 #include <time.h>
@@ -565,6 +566,7 @@ int InjectDll(DWORD pid) {
     CloseHandle(hThread);
     return 0;
 }
+
 MEMORY_REGION* GetRemoteProcessModuleTexts(DWORD pid, size_t* modCount) {
     MEMORY_REGION* moduleTexts = NULL;
     DWORD numModules;
@@ -767,4 +769,80 @@ THREAD_ENTRY* ScanProcessThreads(DWORD pid, size_t* oddCount) {
 
 THREAD_ENTRY* ScanThreadsGlobally(size_t* oddCount) {
     return ScanProcessThreads(0, oddCount);
+}
+
+// This function will return an array of all stack frames' return addresses
+LPVOID* StackWalkForReturnAddresses(HANDLE hThread, HANDLE hProcess, size_t* frameCount) {
+
+}
+
+// simple wrapper over StackWalkForReturnAddresses
+LPVOID* StackWalkForReturnAddressesById(DWORD tid, DWORD pid, size_t* frameCount) {
+    HANDLE hProcess = OpenProcess(, FALSE, pid);
+    if (hProcess == INVALID_HANDLE_VALUE) {
+
+        return NULL;
+    }
+
+    HANDLE hThread = OpenThread(THREAD_QUERY_INFORMATION, FALSE, tid);
+    if (hThread == INVALID_HANDLE_VALUE) {
+
+        return NULL;
+    }
+
+    return StackWalkForReturnAddresses(hThread, hProcess, frameCount);
+}
+
+DWORD GetParentPid(HANDLE hProcess) {
+    PROCESS_BASIC_INFORMATION pbi;
+    NTSTATUS status = NtQueryInformationProcess(hProcess, 0, &pbi, sizeof(pbi), NULL);
+    if (status != 0) {
+        return 0;
+    }
+    return (DWORD)pbi.InheritedFromUniqueProcessId;
+}
+
+BOOL IsProcessElevated(HANDLE hProcess) {
+    HANDLE hToken = NULL;
+    TOKEN_ELEVATION elevation;
+    DWORD dwSize;
+
+    if (!OpenProcessToken(hProcess, TOKEN_QUERY, &hToken)) {
+        return FALSE;
+    }
+
+    if (!GetTokenInformation(hToken, TokenElevation, &elevation, sizeof(elevation), &dwSize)) {
+        CloseHandle(hToken);
+        return FALSE;
+    }
+
+    CloseHandle(hToken);
+    return elevation.TokenIsElevated != 0;
+}
+
+DWORD GetProcessIntegrityLevel(HANDLE hProcess) {
+    HANDLE hToken = NULL;
+    DWORD dwSize = 0;
+    PTOKEN_MANDATORY_LABEL pTIL = NULL;
+    DWORD integrityLevel = 0;
+
+    if (!OpenProcessToken(hProcess, TOKEN_QUERY, &hToken)) {
+        return 0;
+    }
+
+    GetTokenInformation(hToken, TokenIntegrityLevel, NULL, 0, &dwSize);
+    pTIL = (PTOKEN_MANDATORY_LABEL)malloc(dwSize);
+
+    if (!GetTokenInformation(hToken, TokenIntegrityLevel, pTIL, dwSize, &dwSize)) {
+        free(pTIL);
+        CloseHandle(hToken);
+        return 0;
+    }
+
+    integrityLevel = *GetSidSubAuthority(pTIL->Label.Sid, 
+        (DWORD)(UCHAR)(*GetSidSubAuthorityCount(pTIL->Label.Sid) - 1));
+
+    free(pTIL);
+    CloseHandle(hToken);
+    return integrityLevel;
 }

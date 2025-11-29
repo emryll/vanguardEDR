@@ -125,7 +125,10 @@ func cli_parse(tokens []string) bool {
 			return false
 		}
 
-		C.InjectDll(C.DWORD(pid))
+		r := C.InjectDll(C.DWORD(pid))
+		if r == C.int(0) {
+			color.Green("[+] Injected hook successfully")
+		}
 
 		//* Register process
 		path, err := GetProcessExecutable(uint32(pid))
@@ -281,40 +284,6 @@ func cli_launch(cmdLine string) error {
 	return nil
 }
 
-func RegisterProcess(pid int, path string) {
-	_, exists := processes[pid]
-	if exists {
-		return
-	}
-
-	signedStatus, err := IsSignatureValid(path)
-	if err != nil {
-		red.Log("\n[!] Failed to get authenticode signature of %s!\n", path)
-		white.Log("\tError: %v\n", err)
-	}
-
-	var signed bool
-	switch signedStatus {
-	case IS_UNSIGNED:
-		signed = false
-	case HAS_SIGNATURE:
-		signed = true
-	case HASH_MISMATCH:
-		red.Log("\n[!] Hash mismatch on %s!!\n", path)
-		TerminateProcess(pid)
-	}
-
-	processes[pid] = &Process{
-		Path:           path,
-		IsSigned:       signed,
-		APICalls:       make(map[string]ApiCallData),
-		FileEvents:     make(map[string]FileEventData),
-		RegEvents:      make(map[string]RegEventData),
-		PatternMatches: make(map[string]*StdResult),
-	}
-	go StaticScan(pid, false) // no print
-}
-
 func (p *Process) PrintBasic(pid int) {
 	fmt.Printf("\n[*] Process %d [*]\n", pid)
 	fmt.Printf("\tFilepath: %s", p.Path)
@@ -348,8 +317,8 @@ func PrintBanner(banner int) {
 		fmt.Println("⠀⠀⠀⠀⠀⠀⠀⢸⣿⠀⠈⠁⠀⠀⠀⠀⠀⠀⠀⠀⠀⢸⡇⠀    ⠀⠀⠀⠀⠀⢸⣿⠀⠈⠁⠀⠀⠀⠀⠀⠀⠀⠀⠀⢸⡇⠀    ⠀⠀⠀⠀⠀⢸⣿⠀⠈⠁⠀⠀⠀⠀⠀⠀⠀⠀⠀⢸⡇⠀     ")
 		fmt.Println("⠀⠀⠀⠀⠀⠀⠀⠘⣿⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⣸⠁⠀   ⠀⠀⠀⠀⠀⠀⠘⣿⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⣸⠁⠀    ⠀⠀⠀⠀⠀⠘⣿⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⣸⠁⠀     ")
 		fmt.Println("⠀⠀⠀⠀⠀⠀⠀⠀⢿⣧⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⣠⠏⠀⠀  ⠀⠀⠀⠀⠀⠀⠀⠀⢿⣧⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⣠⠏⠀⠀    ⠀⠀⠀⠀⠀⠀⢿⣧⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⣠⠏⠀⠀     ")
-		fmt.Println("⠀⠀⠀⠀⠀⠀⠀⠀⠘⢿⣷⣄⠀⠀⠀⠀⠀⠀⢀⣴⠏⠀⠀⠀   ⠀⠀⠀⠀⠀⠀⠀⠘⢿⣷⣄⠀⠀⠀⠀⠀⠀⢀⣴⠏⠀⠀⠀  ⠀⠀⠀⠀⠀⠀⠀⠘⢿⣷⣄⠀⠀⠀⠀⠀⠀⢀⣴⠏⠀⠀⠀    ")
-		fmt.Println("⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠙⢿⣷⣦⣤⣤⣴⣾⠋⠁⠀⠀⠀⠀  ⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠙⢿⣷⣦⣤⣤⣴⣾⠋⠁⠀⠀⠀⠀ ⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠙⢿⣷⣦⣤⣤⣴⣾⠋⠁⠀⠀⠀⠀   ")
+		fmt.Println("⠀⠀⠀⠀⠀⠀⠀⠀⠘⢿⣷⣄⠀⠀⠀⠀⠀⠀⢀⣴⠏⠀⠀⠀   ⠀⠀⠀⠀⠀⠀⠀⠘⢿⣷⣄⠀⠀⠀⠀⠀⠀⢀⣴⠏⠀⠀⠀  ⠀⠀⠀  ⠀⠀⠀⠘⢿⣷⣄⠀⠀⠀⠀⠀⠀⢀⣴⠏⠀⠀⠀    ")
+		fmt.Println("⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠙⢿⣷⣦⣤⣤⣴⣾⠋⠁⠀⠀⠀⠀  ⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠙⢿⣷⣦⣤⣤⣴⣾⠋⠁⠀⠀⠀⠀ ⠀⠀⠀⠀⠀⠀  ⠀⠀⠀⠙⢿⣷⣦⣤⣤⣴⣾⠋⠁⠀⠀⠀⠀   ")
 
 	case POLICE_BANNER:
 		fmt.Println("⠀⠀⠀⠀⠀⠀⠀⠀⠀⡀⠀⠀⠀⠀⠀⠀⠀⠀⢀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀  ⠀⠀⠀⠀⠀⠀⠀⠀⠀⡀⠀⠀⠀⠀⠀⠀⠀⠀⢀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀")

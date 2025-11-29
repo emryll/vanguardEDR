@@ -1,5 +1,6 @@
 package main
 
+//#include <windows.h>
 //#include "memscan.h"
 import "C"
 
@@ -209,12 +210,22 @@ func ParseRegTelemetryPacket(data []byte) RegEventData {
 	return regEvent
 }
 
-// TODO: test this
 func ParseTextTelemetryPacket(data []byte) TextCheckData {
 	var textCheck TextCheckData
 	textCheck.Result = ReadBoolValue(data[0:4])
 	textCheck.Module = ReadAnsiStringValue(data[4 : 4+260])
 	return textCheck
+}
+
+func ParseIatTelemetryPacket(data []byte) []IatIntegrityData {
+	var iatMismatches []IatIntegrityData
+	packetSize := 64 + 8 // char[64] + LPVOID
+	for counter := 0; counter <= (len(data) - packetSize); counter += packetSize {
+		fn := ReadAnsiStringValue(data[counter : counter+64])
+		addr := ReadPointerValue(data[counter+64 : counter+64+8])
+		iatMismatches = append(iatMismatches, IatIntegrityData{FuncName: fn, Address: addr})
+	}
+	return iatMismatches
 }
 
 func ReadRemoteProcessMem(hProcess windows.Handle, address uintptr, size int) ([]byte, error) {
@@ -549,4 +560,62 @@ func (r HashLookup) IsEmpty() bool {
 		return true
 	}
 	return false
+}
+
+func RegisterProcess(pid int, path string) {
+	_, exists := processes[pid]
+	if exists {
+		return
+	}
+
+	signedStatus, err := IsSignatureValid(path)
+	if err != nil {
+		red.Log("\n[!] Failed to get authenticode signature of %s!\n", path)
+		white.Log("\tError: %v\n", err)
+	}
+
+	var signed bool
+	switch signedStatus {
+	case IS_UNSIGNED:
+		signed = false
+	case HAS_SIGNATURE:
+		signed = true
+	case HASH_MISMATCH:
+		red.Log("\n[!] Hash mismatch on %s!!\n", path)
+		TerminateProcess(pid)
+	}
+
+	processes[pid] = &Process{
+		Path:           path,
+		IsSigned:       signed,
+		APICalls:       make(map[string]ApiCallData),
+		FileEvents:     make(map[string]FileEventData),
+		RegEvents:      make(map[string]RegEventData),
+		PatternMatches: make(map[string]*StdResult),
+	}
+
+	hProcess, err := windows.OpenProcess(windows.PROCESS_QUERY_INFORMATION, false, uint32(pid))
+	if err == nil {
+		if C.IsProcessElevated(C.HANDLE(hProcess)) == C.TRUE {
+			processes[pid].IsElevated = true
+		}
+
+		integrity := C.GetProcessIntegrityLevel(C.HANDLE(hProcess))
+		if integrity != C.DWORD(0) {
+			processes[pid].Integrity = uint32(integrity)
+		}
+
+		ppid := C.GetParentPid(C.HANDLE(hProcess))
+		if ppid != C.DWORD(0) {
+			processes[pid].ParentPid = int(ppid)
+			parentPath, err := GetProcessExecutable(uint32(ppid))
+			if err != nil {
+				red.Log("Failed to get process path of process %d (parent of %d)\n", ppid, pid)
+			} else {
+				processes[pid].ParentPath = parentPath
+			}
+		}
+		windows.CloseHandle(hProcess)
+	}
+	go StaticScan(pid, false) // no print
 }
