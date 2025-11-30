@@ -1,8 +1,68 @@
 package main
 
-import "path/filepath"
+import (
+	"path/filepath"
 
-// Method to implement Component interface. Is this component found?
+	"honnef.co/go/tools/pattern"
+)
+
+// This is the function you should call to trigger a behavioral scan for a process.
+// It will go through each pattern and check if it matches telemetry history.
+// Before running this, BehaviorPatterns global list must be loaded (should happen at start-up) 
+func (p *Process) CheckBehaviorPatterns() Result {
+	var matches Result
+Patterns:
+	for _, pattern := range BehaviorPatterns {
+		//* first check universal conditions
+		if !pattern.UniversalConditions.Check(p) {
+			continue
+		}
+
+		var (
+			startTimes []int64
+			bonus = 0
+		)
+
+		//* check each component
+		for i, component := range pattern.Components {
+			result := component.IsMatch(p)
+			if !result.Match {
+				// if its not a required component
+				if !component.IsRequired() {
+					continue
+				}
+				continue Patterns
+			}
+
+			if !component.TimeMatters || pattern.TimeRange == 0 {
+				// if it was a bonus component, add to score
+				bonus += component.GetBonus() // this will be 0 if its required
+				continue
+			}
+
+			// on the first one, save the times to create a timeline
+			if i == 0 {
+				startTimes = append(startTimes, result.TimeStamps)
+			} else {
+				startTimes = CheckTimeline(startTimes, result.TimeStamps, pattern.TimeRange)
+				if len(startTimes) == 0 {
+					continue Patterns
+				}
+			}
+			// if its not a bonus component, bonus will be 0.
+			bonus += component.Bonus
+		}
+
+		// since it got this far, it is a match
+		match := pattern.GetStdResult(bonus)
+		matches.TotalScore += match.Score
+		matches.Results = append(matches.Results, match)
+	}
+	return matches
+}
+
+// Method to implement Component interface.
+// This tells if the component matched, and returns the timestamp options.
 func (c ApiComponent) IsMatch(p *Process) ComponentMatch {
 	var result ComponentMatch
 	if c.UniversalOverride != nil && !c.UniversalOverride.Check(p) {
@@ -32,7 +92,8 @@ Options:
 	return result
 }
 
-// Method to implement Component interface. Is this component found?
+// Method to implement Component interface. 
+// This tells if the component matched, and returns the timestamp options.
 func (c FileComponent) IsMatch(p *Process) ComponentMatch {
 	var result ComponentMatch
 	if c.UniversalOverride != nil && !c.UniversalOverride.Check(p) {
@@ -43,7 +104,8 @@ func (c FileComponent) IsMatch(p *Process) ComponentMatch {
 	if len(c.)
 }
 
-// Method to implement Component interface. Is this component found?
+// Method to implement Component interface. 
+// This tells if the component matched, and returns the timestamp options.
 func (c RegComponent) IsMatch(p *Process) ComponentMatch {
 	//TODO:
 }
@@ -238,13 +300,13 @@ func (f AllocFilter) Check(p *Process, event interface{}) bool {
 	for _, arg := range apiCall.args {
 		switch arg.Name {
 		case "Size", "SizeOfAlloc", "AllocSize":
-			size := binary.LittleEndian.Uint64(arg.RawData)
+			size = binary.LittleEndian.Uint64(arg.RawData)
 			sizeFound = true
 		case "Type", "AllocType", "AllocationType":
-			allocType := ReadDWORDValue(arg.RawData)
+			allocType = ReadDWORDValue(arg.RawData)
 			typeFound = true
 		case "Protection":
-			protection := ReadDWORDValue(arg.RawData)
+			protection = ReadDWORDValue(arg.RawData)
 			protectFound = true
 		}
 	}
@@ -283,15 +345,121 @@ func (f AllocFilter) Check(p *Process, event interface{}) bool {
 // Method to implement Condition interface. Returns true if it passed filter
 func (f ProtectFilter) Check(p *Process, event interface{}) bool {
 	//? memory protection apis should save old protection and new protection
+	apiCall := event.(ApiCallData)
+	var (
+		oldFound bool
+		newFound bool
+		oldProtect uint32
+		newProtect uint32
+	)
 
+	for _, arg := range apiCall.args {
+		switch arg.Name {
+		case "OldProtect":
+			oldProtect = ReadDWORDValue(arg.RawData)
+			oldFound = true
+		case "NewProtect":
+			newProtect = ReadDWORDValue(arg.RawData)
+			newFound = true
+		}
+	}
+
+	if oldFound {
+		var found bool
+		for _, p := range f.OldProtection {
+			if protect & p != 0 {
+				found = true
+				break
+			}
+		}
+		if !found {
+			return false
+		}
+		//TODO: OldProtectionNot
+	}
+
+	if newFound {
+		var found bool
+		for _, p := range f.NewProtection {
+			if protect & p != 0 {
+				found = true
+				break
+			}
+		}
+		if !found {
+			return false
+		}
+		//TODO: NewProtectionNot
+	}
 }
 
 // Method to implement Condition interface. Returns true if it passed filter
 func (f HandleFilter) Check(p *Process, event interface{}) bool {
 	//? only desired access is needed, but likely also target pid
+	apiCall := event.(ApiCallData)
+	var (
+		pathFound bool
+		accessFound bool
+		targetPath string
+		desiredAccess uint32
+	)
+
+	for _, arg := range apiCall.args {
+		switch arg.Name {
+		case "TargetPath", "Path":
+			targetPath = ReadAnsiStringValue(arg.RawData)
+			pathFound = true
+		case "TargetPid", "Pid":
+			pid := ReadDWORDValue(arg.RawData)
+			path, err := GetProcessExecutable(pid)
+			if err != nil {
+				red.Log("\n[!] Failed to get path of process %d\n\tError: %v\n", pid, err)
+			} else {
+				targetPath = path
+				pathFound = true
+			}
+		case "DesiredAccess":
+			desiredAccess = ReadDWORDValue(arg.RawData)
+			accessFound
+		}
+	}
+
+	if pathFound {
+		var found bool
+		if len(f.TargetPath) == 0 {
+			found = true
+		}
+		for _, path := range f.TargetPath {
+			
+		}
+		if !found {
+			return false
+		}
+	}
+
+	if accessFound {
+
+	}
 }
 
 // Method to implement Condition interface. Returns true if it passed filter
 func (f PTCreationFilter) Check(p *Process, event interface{}) bool {
 	//? only creation flags are needed
+}
+
+// This function will iterate through startTimes and check if any timeOptions fit into it.
+// If none fit, this timeline is not possible and will be removed. The possible timelines are returned
+func CheckTimeline(startTimes []int64, timeOptions []int64, timeRange int64) []int64 {
+Timelines:
+	for i, start := range startTimes {
+		for _, time := range timeOptions {
+			if start - time <= timeRange {
+				// this one is valid
+				continue Timelines
+			}
+		}
+		// no option fits the timeline
+		startTimes = RemoveSliceMember(startTimes, i)
+	}		
+	return startTimes
 }
