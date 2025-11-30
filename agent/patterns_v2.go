@@ -38,7 +38,9 @@ func (c FileComponent) IsMatch(p *Process) ComponentMatch {
 	if c.UniversalOverride != nil && !c.UniversalOverride.Check(p) {
 		return result // false
 	}
-	//TODO:
+
+	var PathFound bool
+	if len(c.)
 }
 
 // Method to implement Component interface. Is this component found?
@@ -157,6 +159,9 @@ func (f FileFilter) Check(p *Process, event interface{}) bool {
 	if len(f.Name) == 0 {
 		foundName = true
 	}
+
+	//TODO: update for new nested directory design
+
 	for _, name := range f.Name {
 		if name == filepath.Base(fileEvent.Path) || name == fileEvent.Path {
 			foundName = true
@@ -221,11 +226,64 @@ func (f FileFilter) Check(p *Process, event interface{}) bool {
 // Method to implement Condition interface. Returns true if it passed filter
 func (f AllocFilter) Check(p *Process, event interface{}) bool {
 	//? memory allocation apis should save protection, allocation type and size
+	apiCall := event.(ApiCallData)
+	var (
+		size 	 	 uint64
+		sizeFound    bool
+		allocType    uint32
+		typeFound    bool
+		protection   uint32
+		protectFound bool
+	)
+	for _, arg := range apiCall.args {
+		switch arg.Name {
+		case "Size", "SizeOfAlloc", "AllocSize":
+			size := binary.LittleEndian.Uint64(arg.RawData)
+			sizeFound = true
+		case "Type", "AllocType", "AllocationType":
+			allocType := ReadDWORDValue(arg.RawData)
+			typeFound = true
+		case "Protection":
+			protection := ReadDWORDValue(arg.RawData)
+			protectFound = true
+		}
+	}
+
+	if sizeFound && (f.sizeMin > size || f.sizeMax < size) {
+		return false
+	}
+
+	if protectFound {
+		var isCorrectProtection bool
+		if len(f.Protection) == 0 {
+			isCorrectProtection = true
+		}
+		for _, p := range f.Protection {
+			if protect & p != 0 {
+				isCorrectProtection = true
+				break
+			}
+		}
+		if !isCorrectProtection {
+			return false
+		}
+	
+		for _, p := range f.ProtectionNot {
+			if protect & p != 0 {
+				return false
+			}
+		}
+	}
+
+	if typeFound && f.IsImageSection && (allocType & MEM_IMAGE) != 0 {
+		return false
+	}
 }
 
 // Method to implement Condition interface. Returns true if it passed filter
 func (f ProtectFilter) Check(p *Process, event interface{}) bool {
 	//? memory protection apis should save old protection and new protection
+
 }
 
 // Method to implement Condition interface. Returns true if it passed filter
