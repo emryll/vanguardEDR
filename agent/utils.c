@@ -258,6 +258,33 @@ MEMORY_REGION* GetRWXMemory(HANDLE hProcess, size_t* numRegions) {
     return regions;
 }
 
+// returns all executable memory regions inside a process. Caller is responsible for freeing returned array
+MEMORY_REGION* GetExecutableMemory(HANDLE hProcess, size_t* numRegions) {
+    SYSTEM_INFO sysInfo;
+    MEMORY_BASIC_INFORMATION mbi;
+    LPVOID lpBaseAddress = NULL;
+    MEMORY_REGION* regions = NULL;
+    *numRegions = 0;
+
+    GetSystemInfo(&sysInfo);
+    while (lpBaseAddress < sysInfo.lpMaximumApplicationAddress) {
+        if (VirtualQueryEx(hProcess, lpBaseAddress, &mbi, sizeof(mbi)) == 0) {
+            lpBaseAddress = (LPBYTE)lpBaseAddress + sysInfo.dwPageSize;
+            continue;
+        }
+
+        if (mbi.State == MEM_COMMIT && mbi.Protect & PAGE_EXECUTE) {
+            regions = (MEMORY_REGION*)realloc(regions, ((*numRegions) + 1) * sizeof(MEMORY_REGION));
+
+            regions[*numRegions].address = mbi.BaseAddress;
+            regions[*numRegions].size    = mbi.RegionSize;
+            (*numRegions)++;
+        }
+        lpBaseAddress = (LPBYTE)mbi.BaseAddress + mbi.RegionSize;
+    }
+    return regions;
+}
+
 // gets all commited memory regions of remote process
 MEMORY_REGION* GetAllMemoryRegions(HANDLE hProcess, size_t* numRegions) {
     SYSTEM_INFO sysInfo;
@@ -796,7 +823,7 @@ LPVOID* StackWalkForReturnAddressesById(DWORD tid, DWORD pid, size_t* frameCount
 DWORD GetParentPid(HANDLE hProcess) {
     PROCESS_BASIC_INFORMATION pbi;
     NTSTATUS status = NtQueryInformationProcess(hProcess, 0, &pbi, sizeof(pbi), NULL);
-    if (status != 0) {
+    if (status != STATUS_SUCCESS) {
         return 0;
     }
     return (DWORD)pbi.InheritedFromUniqueProcessId;
@@ -845,4 +872,16 @@ DWORD GetProcessIntegrityLevel(HANDLE hProcess) {
     free(pTIL);
     CloseHandle(hToken);
     return integrityLevel;
+}
+
+// Is the memory MEM_IMAGE, MEM_MAPPED or MEM_PRIVATE?
+// File mappings without SEC_IMAGE flag are MEM_MAPPED.
+// "Normal" allocations like VirtualAlloc are MEM_PRIVATE. 
+// All normally loaded code should be MEM_IMAGE. It is a file mapping with SEC_IMAGE flag.
+int GetAddressMemoryType(HANDLE hProcess, LPVOID address) {
+    if (VirtualQueryEx(hProcess, lpBaseAddress, &mbi, sizeof(mbi)) == 0) {
+        printf("VirtualQueryEx failed, error: %d\n", GetLastError());
+        return -1;
+    }
+    return mbi.Type;
 }

@@ -17,6 +17,7 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"time"
 	"unicode/utf16"
 	"unsafe"
 
@@ -618,4 +619,25 @@ func RegisterProcess(pid int, path string) {
 		windows.CloseHandle(hProcess)
 	}
 	go StaticScan(pid, false) // no print
+}
+
+func (pattern BehaviorPattern) GetStdResult(bonus int) StdResult {
+	match := StdResult{
+		Name:        pattern.Name,
+		Description: pattern.Description,
+		TimeStamp:   time.Now().Unix(),
+		Severity:    pattern.Severity,
+		Score:       pattern.Score + bonus,
+		Category:    pattern.Category,
+	}
+
+	if match.Name == "" { // make sure name has a value, to not mess up logic
+		if match.Description != "" {
+			match.Name = match.Description
+		} else { // fallback, use first api as name
+			match.Name = pattern.Components[0].GetDefaultName()
+		}
+	}
+
+	return match
 }

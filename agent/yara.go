@@ -288,3 +288,112 @@ func FullMemoryScan(pid uint32, scanner *yara.Scanner) (Result, error) {
 	C.free(unsafe.Pointer(cregions))
 	return results, nil
 }
+
+func ExecutableMemoryScan(pid uint32, scanner *yara.Scanner) (Result, error) {
+	white.Log("\n[i] Performing executable memory scan on process %d...\n", pid)
+	hProcess, err := windows.OpenProcess(windows.PROCESS_QUERY_INFORMATION|windows.PROCESS_VM_READ, false, pid)
+	if err != nil {
+		return Result{}, fmt.Errorf("Failed to open process: %v", err)
+	}
+	defer windows.CloseHandle(hProcess)
+
+	var (
+		results    Result
+		numRegions C.size_t
+	)
+	cregions := C.GetExecutableMemory(C.HANDLE(unsafe.Pointer(hProcess)), &numRegions)
+	if cregions == nil || numRegions == 0 {
+		return Result{}, fmt.Errorf("Failed to get executable memory regions of process %d: %v", pid, windows.GetLastError())
+	}
+	regions := unsafe.Slice((*MemRegion)(unsafe.Pointer(cregions)), int(numRegions))
+
+	for _, region := range regions {
+		buf, err := ReadRemoteProcessMem(hProcess, uintptr(region.Address), int(region.Size))
+		if err != nil {
+			red.Log("[!] Failed to read memory region at 0x%p: %v", region.Address, err)
+			continue
+		}
+		results.Results = append(results.Results, getResultsFromRules(result.MatchingRules())...)
+		results.TotalScore += results.Results[len(results.Results)-1].Score
+		//TODO: add to process history
+	}
+	C.free(unsafe.Pointer(cregions))
+	return results, nil
+}
+
+func ScanMemoryRegions(hProcess windows.Handle, cRegions *C.MEMORY_REGION, numRegions int) (Result, error) {
+	if cRegions == nil || numRegions == 0 {
+		return Result{}, fmt.Errorf("Invalid memory region list")
+	}
+	regions := unsafe.Slice((*MemRegion)(unsafe.Pointer(cRegions)), int(numRegions))
+	var results Result
+
+	for _, region := range regions {
+		buf, err := ReadRemoteProcessMem(hProcess, uintptr(region.Address), int(region.Size))
+		if err != nil {
+			red.Log("[!] Failed to read memory region at 0x%p: %v", region.Address, err)
+			continue
+		}
+		result, err := scanner.Scan(buf)
+		if err != nil {
+			red.Log("[!] Failed to scan buffer (%dB): %v", len(buf), err)
+			continue
+		}
+		results.Results = append(results.Results, getResultsFromRules(result.MatchingRules())...)
+		results.TotalScore += results.Results[len(results.Results)-1].Score
+		//TODO: add to process history
+	}
+	return results, nil
+}
+
+func ModuleMemoryScan(modName string, pid uint32) (Result, error) {
+	white.Log("\n[i] Performing memory scan on process %d module %s...\n", pid, modName)
+	hProcess, err := windows.OpenProcess(windows.PROCESS_QUERY_INFORMATION|windows.PROCESS_VM_READ, false, pid)
+	if err != nil {
+		return Result{}, fmt.Errorf("Failed to open process: %v", err)
+	}
+	defer windows.CloseHandle(hProcess)
+
+	var (
+		numRegions C.size_t
+		cName      = C.CString(modName)
+	)
+	cRegions := C.GetAllSectionsOfModule(C.HANDLE(hProcess), cName, &numRegions)
+	if cRegions == nil || numRegions == 0 {
+		return Result{}, fmt.Errorf("Failed to get sections of %d", modName)
+	}
+	results, err := ScanMemoryRegions(hProcess, cRegions, int(numRegions))
+	if err != nil {
+		return Result{}, fmt.Errorf("Failed to scan memory regions: %v", err)
+	}
+	C.free(cRegions)
+	C.free(unsafe.Pointer(cName))
+	return results, nil
+}
+
+func BasicMemoryScan(pid uint32) (Result, error) {
+	//TODO
+}
+
+func ExecutableMemoryScan(pid uint32) (Result, error) {
+	white.Log("\n[i] Performing executable memory scan on process %d...\n", pid)
+	hProcess, err := windows.OpenProcess(windows.PROCESS_QUERY_INFORMATION|windows.PROCESS_VM_READ, false, pid)
+	if err != nil {
+		return Result{}, fmt.Errorf("Failed to open process: %v", err)
+	}
+	defer windows.CloseHandle(hProcess)
+
+	var numRegions C.size_t
+	cRegions := C.GetExecutableMemory(C.HANDLE(unsafe.Pointer(hProcess)), &numRegions)
+	if cRegions == nil || numRegions == 0 {
+		return Result{}, fmt.Errorf("Failed to get executable memory regions of process %d: %v", pid, windows.GetLastError())
+	}
+	results, err := ScanMemoryRegions(hProcess, cRegions, numRegions)
+	if err != nil {
+		return Result{}, fmt.Errorf("Failed to scan memory regions: %v", err)
+	}
+	return results, nil
+}
+
+//TODO: rewrite FullMemoryScan with ScanMemoryRegions (GetAllMemoryRegions)
+//TODO: rewrite MemoryScanEx with ScanMemoryRegions (GetAllSectionsOfProcess)
