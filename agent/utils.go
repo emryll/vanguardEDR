@@ -641,3 +641,13 @@ func (pattern BehaviorPattern) GetStdResult(bonus int) StdResult {
 
 	return match
 }
+
+func DumpBytes(data []byte) {
+	for i, b := range data {
+		if i%16 == 0 {
+			fmt.Printf("\n\t")
+		}
+		fmt.Printf("%02X ", b)
+	}
+	fmt.Printf("\n")
+}
