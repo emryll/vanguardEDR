@@ -23,38 +23,28 @@ GUID RegistryProviderGuid = { 0x70EB4F03, 0xC1DE, 0x4F73, { 0xA0, 0x51, 0x33, 0x
 
 TRACEHANDLE SessionHandle = 0;
 TRACEHANDLE traceHandle = 0;
+EVENT_TRACE_PROPERTIES* SessionProperties = {0};
 
 BOOL Running = TRUE;
-/*
-// The paths from events are wide strings, and start with something like " \Device\HarddiskVolume".
-// This function converts it to a normal ansi string path with drive letters
-LPCSTR NormalizeEventPath(WCHAR* path) {
-    //? should you also return string len?
-    //TODO: get all drive letters with GetLogicalDriveStrings
-        //TODO: query device name for this letter with QueryDosDevice
-        //TODO: compare it against path
-}
-*/
+
+
 VOID WINAPI EventCallback(PEVENT_RECORD event) {
+    if (!IsTracked(event->EventHeader.ProcessId)) {
+        return;
+    }
+
     SYSTEMTIME st;
     FILETIME ft;
     ft.dwLowDateTime = event->EventHeader.TimeStamp.LowPart;
     ft.dwHighDateTime = event->EventHeader.TimeStamp.HighPart;
     FileTimeToSystemTime(&ft, &st);
 
-    //TODO: instead craft a telemetry packet
-    //TODO: send the telemetry packet into hPipe
-
-    // demo mode: only process specific process' events
-    if (singlePid && event->EventHeader.ProcessId != pid) {
-        return;
-    }
     LPCSTR stars = "*********************************************************************";
     printf("\n%s\n", stars);
     printf("[%02d:%02d:%02d.%03d] ", st.wHour, st.wMinute, st.wSecond, st.wMilliseconds);
 
     // check which provider
-    if (IsEqualGUID(&event->EventHeader.ProviderId, &FileProviderGuid)) {
+    if (IsEqualGUID(event->EventHeader.ProviderId, FileProviderGuid)) {
         switch (event->EventHeader.EventDescriptor.Id) {    
             case EVENT_FILE_CREATE:
             printf("FILE CREATE EVENT (%d), PID: %lu\n",
@@ -81,7 +71,14 @@ VOID WINAPI EventCallback(PEVENT_RECORD event) {
                 event->EventHeader.EventDescriptor.Id, event->EventHeader.ProcessId);
                 break;
         }
-    } else if (IsEqualGUID(&event->EventHeader.ProviderId, &RegistryProviderGuid)) {
+        //* create telemetry packet and send it to agent
+        size_t dataSize;
+        BYTE* dataPacket = CreateFileEventPacket(event, &dataSize);
+        int result = SendEtwTelemetryPacket(event, dataPacket, dataSize, TM_TYPE_ETW_FILE);
+        if (result != 0) {
+            printf("[debug] Failed to send file event packet, error: %d\n", result);
+        }
+    } else if (IsEqualGUID(event->EventHeader.ProviderId, RegistryProviderGuid)) {
         switch (event->EventHeader.EventDescriptor.Id) {    
             case EVENT_REG_CREATE_KEY:
             printf("REGISTRY CREATE KEY EVENT (%d), PID: %lu\n",
@@ -99,8 +96,14 @@ VOID WINAPI EventCallback(PEVENT_RECORD event) {
             printf("UNKNOWN REGISTRY EVENT (%d), PID: %lu\n",
                 event->EventHeader.EventDescriptor.Id, event->EventHeader.ProcessId);
         }
+        size_t dataSize;
+        BYTE* dataPacket = CreateRegistryEventPacket(event, &dataSize);
+        int result = SendEtwTelemetryPacket(event, dataPacket, dataSize, TM_TYPE_ETW_REG);
+        if (result != 0) {
+            printf("[debug] Failed to send registry event packet, error: %d\n", result);
+        }
     }
-
+    /*
     //* print attached data
     if (event->UserDataLength > 0) {
         //printf("UserDataLength %d:\n", event->UserDataLength);
@@ -143,7 +146,14 @@ VOID WINAPI EventCallback(PEVENT_RECORD event) {
                         //printf("propInfo.nonStructType: %ls\n\tInType: %d\n\tOutType: %d\n\tMapNameOffset: %d\n",
                             //propDesc.PropertyName, propInfo.nonStructType.InType, propInfo.nonStructType.OutType, propInfo.nonStructType.MapNameOffset);
                         if (wcscmp((WCHAR*)propDesc.PropertyName, L"FileName") == 0) {
-                            wprintf(L"\tFileName: %ls\n", (WCHAR*)buffer);
+                            //wprintf(L"\tFileName: %ls\n", (WCHAR*)buffer);
+                            char* path = NormalizeEventPath((WCHAR*)buffer);
+                            if (path == NULL) {
+                                printf("[debug] failed to normalize path!\n");
+                            } else {
+                                printf("\tFileName: %s\n", path);
+                                free(path);
+                            }
                         } else {
                             switch (propInfo.nonStructType.InType) {
                                 case TDH_INTYPE_UNICODESTRING:
@@ -168,7 +178,13 @@ VOID WINAPI EventCallback(PEVENT_RECORD event) {
                         }
 
                     } else {
-                        printf("Failed to get property %lu\n", i);
+                        printf("Failed to get property %lu (%d) %d ~ %d\n", i, status, propInfo.nonStructType.InType, propInfo.nonStructType.OutType);
+                        printf("event property: %d\n", event->EventHeader.EventProperty);
+                        if (event->EventHeader.Flags & PropertyStruct || propInfo.Flags & PropertyStruct) {
+                            printf("property struct\n");
+                        } else {
+                            printf("no property struct\n");
+                        }
                     }
 
                     free(buffer);
@@ -178,15 +194,14 @@ VOID WINAPI EventCallback(PEVENT_RECORD event) {
             
             }
         }
-        /*BYTE* data = (BYTE*)event->UserData;
+        BYTE* data = (BYTE*)event->UserData;
         for (USHORT i = 0; i < event->UserDataLength; i++) {
             if (i % 20 == 0) {
                 printf("\n\t");
             }
             printf("%02X ", data[i]);
-        }*/
-
-    }
+        }
+    }*/
 
     if (event->ExtendedDataCount > 0) {
         printf("ExtendedDataCount %d:\n", event->ExtendedDataCount);
@@ -195,22 +210,6 @@ VOID WINAPI EventCallback(PEVENT_RECORD event) {
     printf("\n%s\n", stars);
 }
 
-BOOL IsAdmin() {
-    BOOL isAdmin = FALSE;
-    PSID adminGroup = NULL;
-    SID_IDENTIFIER_AUTHORITY NtAuthority = SECURITY_NT_AUTHORITY;
-
-    if (AllocateAndInitializeSid(&NtAuthority, 2,
-        SECURITY_BUILTIN_DOMAIN_RID,
-        DOMAIN_ALIAS_RID_ADMINS,
-        0, 0, 0, 0, 0, 0,
-        &adminGroup))
-    {
-        CheckTokenMembership(NULL, adminGroup, &isAdmin);
-        FreeSid(adminGroup);
-    }
-    return isAdmin;
-}
 
 BOOL WINAPI CtrlHandler(DWORD fdwCtrlType) {
     if (fdwCtrlType == CTRL_C_EVENT || fdwCtrlType == CTRL_CLOSE_EVENT) {
@@ -233,41 +232,33 @@ BOOL WINAPI CtrlHandler(DWORD fdwCtrlType) {
     return FALSE;
 }
 
-// seperate thread so termination works
-DWORD WINAPI TraceThread(LPVOID arg) {
-    ULONG status = ProcessTrace(&traceHandle, 1, NULL, NULL);
-    switch (status) {
-        case ERROR_SUCCESS:
-            printf("ProcessTrace exited with ERROR_SUCCESS\n");
-            break;
-        case ERROR_CANCELLED:
-            printf("ProcessTrace exited with ERROR_CANCELLED\n");
-            break;
-        default:
-            printf("ProcessTrace exited with %lu\n", status);
-    }
-    return 0;
-}
-
 int main(int argc, char** argv) {
     if (!IsAdmin()) {
         printf("You must have elevated privileges to use ETW.\n");
         return 1;
     }
 
-    if (singlePid) {
-        if (argc < 2) {
-            printf("Not enough args. Usage: %s <pid>\n", argv[0]);
-            return 1;
-        }
+    if (argc >= 2) {
         pid = atoi(argv[1]);
+        TrackProcess(pid);
+        printf("Started tracking process %d\n", pid);
     }
+
+    BOOL ok = InitializeComms();
+    if (!ok) {
+        printf("[!] failed to initialize comms\n");
+        return 1;
+    }
+
+    printf("[debug] sizeof(FILE_EVENT): %d\n", sizeof(FILE_EVENT));
+    printf("[debug] sizeof(REG_EVENT): %d\n", sizeof(REG_EVENT));
+    printf("[debug] sizeof(TELEMETRY_HEADER): %d\n", sizeof(TELEMETRY_HEADER));
+    printf("[debug] sizeof(PARAMETER): %d\n", sizeof(PARAMETER));
 
     // set up ctrl+c to end session
     SetConsoleCtrlHandler(CtrlHandler, TRUE);
 
     // set up session properties
-    EVENT_TRACE_PROPERTIES* SessionProperties = {0};
     // EVENT_TRACE_PROPERTIES is dynamically sized so you cant use stack or it will overflow
     ULONG bufferSize = sizeof(EVENT_TRACE_PROPERTIES) + (strlen(SESSION_NAME) + 1);
     SessionProperties = (EVENT_TRACE_PROPERTIES*)malloc(bufferSize);
